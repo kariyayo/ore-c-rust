@@ -59,6 +59,10 @@ impl Lexer {
     return self.input[start_pos..self.position].to_string();
   }
 
+  fn peek_char(&self) -> char {
+    return self.input.chars().nth(self.read_position).unwrap_or('\u{0}');
+  }
+
   fn next_token(&mut self) -> token::Token {
     self.skip_whitespace();
     let (tok, skip_read) = match self.ch {
@@ -70,10 +74,34 @@ impl Lexer {
         token::Token { token_type: token::SEMICOLON.to_string(), literal: self.ch.to_string() },
         false,
       ),
-      '=' => (
-        token::Token { token_type: token::ASSIGN.to_string(), literal: self.ch.to_string() },
-        false,
-      ),
+      '=' => {
+        if self.peek_char() == '=' {
+          self.read_char();
+          (
+            token::Token { token_type: token::EQ.to_string(), literal: "==".to_string() },
+            false,
+          )
+        } else {
+          (
+            token::Token { token_type: token::ASSIGN.to_string(), literal: self.ch.to_string() },
+            false,
+          )
+        }
+      },
+      '!' => {
+        if self.peek_char() == '=' {
+          self.read_char();
+          (
+            token::Token { token_type: token::NOT_EQ.to_string(), literal: "!=".to_string() },
+            false,
+          )
+        } else {
+          (
+            token::Token { token_type: token::BANG.to_string(), literal: self.ch.to_string() },
+            false,
+          )
+        }
+      },
       '+' => (
         token::Token { token_type: token::PLUS.to_string(), literal: self.ch.to_string() },
         false,
@@ -88,10 +116,6 @@ impl Lexer {
       ),
       '/' => (
         token::Token { token_type: token::SLASH.to_string(), literal: self.ch.to_string() },
-        false,
-      ),
-      '!' => (
-        token::Token { token_type: token::BANG.to_string(), literal: self.ch.to_string() },
         false,
       ),
       '<' => (
@@ -175,6 +199,9 @@ int main(int argc, char *argv[]) {
     int result = add(five, ten);
 }
 
+10 == 10;
+10 != 9;
+
 !-/*5
 
 if (5 < 10) {
@@ -234,6 +261,14 @@ if (5 < 10) {
             (token::RPAREM, ")"),
             (token::SEMICOLON, ";"),
             (token::RBRACE, "}"),
+            (token::INTEGER, "10"),
+            (token::EQ, "=="),
+            (token::INTEGER, "10"),
+            (token::SEMICOLON, ";"),
+            (token::INTEGER, "10"),
+            (token::NOT_EQ, "!="),
+            (token::INTEGER, "9"),
+            (token::SEMICOLON, ";"),
         ];
 
         let mut l = Lexer::new(input);

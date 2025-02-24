@@ -10,13 +10,15 @@ pub const INTEGER: &str = "INTEGER";
 
 // 演算子
 pub const ASSIGN: &str   = "=";
+pub const BANG: &str     = "!";
 pub const PLUS: &str     = "+";
 pub const MINUS: &str    = "-";
 pub const ASTERISK: &str = "*";
 pub const SLASH: &str    = "/";
-pub const BANG: &str     = "!";
 pub const LT: &str       = "<";
 pub const RT: &str       = ">";
+pub const EQ: &str       = "==";
+pub const NOT_EQ: &str   = "!=";
 
 // 括弧
 pub const LPAREM: &str   = "(";
