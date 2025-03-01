@@ -1,6 +1,6 @@
-mod token;
+pub(crate) mod token;
 
-struct Lexer {
+pub(crate) struct Lexer {
   input: String,
   position: usize, // 現在の位置
   read_position: usize, // これから読み込む位置（現在の文字の次）
@@ -8,7 +8,7 @@ struct Lexer {
 }
 
 impl Lexer {
-  fn new(input: &str) -> Lexer {
+  pub(crate) fn new(input: &str) -> Lexer {
     let mut l = Lexer {
       input: input.to_string(),
       position: 0,
@@ -63,7 +63,7 @@ impl Lexer {
     return self.input.chars().nth(self.read_position).unwrap_or('\u{0}');
   }
 
-  fn next_token(&mut self) -> token::Token {
+  pub(crate) fn next_token(&mut self) -> token::Token {
     self.skip_whitespace();
     let (tok, skip_read) = match self.ch {
       ',' => (

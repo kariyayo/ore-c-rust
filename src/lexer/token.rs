@@ -57,6 +57,7 @@ pub fn lookup_ident(s: &str) -> String {
   }
 }
 
+#[derive(Debug)]
 pub struct Token {
   pub token_type: String,
   pub literal: String,
