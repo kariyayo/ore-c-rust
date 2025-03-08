@@ -1,64 +1,66 @@
+pub type TokenType = &'static str;
+
 // tokens
-pub const ILLEGAL: &str = "ILLEGAL";
-pub const EOF: &str = "EOF";
+pub const ILLEGAL: TokenType = "ILLEGAL";
+pub const EOF: TokenType = "EOF";
 
-pub const COMMA: &str = ",";
-pub const SEMICOLON: &str = ";";
+pub const COMMA: TokenType = ",";
+pub const SEMICOLON: TokenType = ";";
 
-pub const IDENT: &str = "IDENT";
-pub const INTEGER: &str = "INTEGER";
+pub const IDENT: TokenType = "IDENT";
+pub const INTEGER: TokenType = "INTEGER";
 
 // 演算子
-pub const ASSIGN: &str = "=";
-pub const BANG: &str = "!";
-pub const PLUS: &str = "+";
-pub const MINUS: &str = "-";
-pub const ASTERISK: &str = "*";
-pub const SLASH: &str = "/";
-pub const LT: &str = "<";
-pub const RT: &str = ">";
-pub const EQ: &str = "==";
-pub const NOT_EQ: &str = "!=";
+pub const ASSIGN: TokenType = "=";
+pub const BANG: TokenType = "!";
+pub const PLUS: TokenType = "+";
+pub const MINUS: TokenType = "-";
+pub const ASTERISK: TokenType = "*";
+pub const SLASH: TokenType = "/";
+pub const LT: TokenType = "<";
+pub const RT: TokenType = ">";
+pub const EQ: TokenType = "==";
+pub const NOT_EQ: TokenType = "!=";
 
 // 括弧
-pub const LPAREM: &str = "(";
-pub const RPAREM: &str = ")";
-pub const LBRACE: &str = "{";
-pub const RBRACE: &str = "}";
-pub const LBRACKET: &str = "[";
-pub const RBRACKET: &str = "]";
+pub const LPAREM: TokenType = "(";
+pub const RPAREM: TokenType = ")";
+pub const LBRACE: TokenType = "{";
+pub const RBRACE: TokenType = "}";
+pub const LBRACKET: TokenType = "[";
+pub const RBRACKET: TokenType = "]";
 
 // キーワード
-pub const VOID: &str = "VOID";
-pub const CHAR: &str = "CHAR";
-pub const SHORT: &str = "SHORT";
-pub const INT: &str = "INT";
-pub const LONG: &str = "LONG";
-pub const IF: &str = "IF";
-pub const ELSE: &str = "ELSE";
-pub const SWITCH: &str = "SWITCH";
-pub const CASE: &str = "CASE";
-pub const DEFAULT: &str = "DEFAULT";
-pub const RETURN: &str = "RETURN";
+pub const VOID: TokenType = "VOID";
+pub const CHAR: TokenType = "CHAR";
+pub const SHORT: TokenType = "SHORT";
+pub const INT: TokenType = "INT";
+pub const LONG: TokenType = "LONG";
+pub const IF: TokenType = "IF";
+pub const ELSE: TokenType = "ELSE";
+pub const SWITCH: TokenType = "SWITCH";
+pub const CASE: TokenType = "CASE";
+pub const DEFAULT: TokenType = "DEFAULT";
+pub const RETURN: TokenType = "RETURN";
 
-pub fn lookup_ident(s: &str) -> String {
+pub fn lookup_ident(s: &str) -> TokenType {
     match s {
-        "char" => CHAR.to_string(),
-        "short" => SHORT.to_string(),
-        "int" => INT.to_string(),
-        "long" => LONG.to_string(),
-        "if" => IF.to_string(),
-        "else" => ELSE.to_string(),
-        "switch" => SWITCH.to_string(),
-        "case" => CASE.to_string(),
-        "default" => DEFAULT.to_string(),
-        "return" => RETURN.to_string(),
-        _ => IDENT.to_string(),
+        "char" => CHAR,
+        "short" => SHORT,
+        "int" => INT,
+        "long" => LONG,
+        "if" => IF,
+        "else" => ELSE,
+        "switch" => SWITCH,
+        "case" => CASE,
+        "default" => DEFAULT,
+        "return" => RETURN,
+        _ => IDENT,
     }
 }
 
 #[derive(Debug)]
 pub struct Token {
-    pub token_type: String,
+    pub token_type: TokenType,
     pub literal: String,
 }

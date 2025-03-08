@@ -76,14 +76,14 @@ impl Lexer {
         let (tok, skip_read) = match self.ch {
             ',' => (
                 token::Token {
-                    token_type: token::COMMA.to_string(),
+                    token_type: token::COMMA,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ';' => (
                 token::Token {
-                    token_type: token::SEMICOLON.to_string(),
+                    token_type: token::SEMICOLON,
                     literal: self.ch.to_string(),
                 },
                 false,
@@ -93,7 +93,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::EQ.to_string(),
+                            token_type: token::EQ,
                             literal: "==".to_string(),
                         },
                         false,
@@ -101,7 +101,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::ASSIGN.to_string(),
+                            token_type: token::ASSIGN,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -113,7 +113,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::NOT_EQ.to_string(),
+                            token_type: token::NOT_EQ,
                             literal: "!=".to_string(),
                         },
                         false,
@@ -121,7 +121,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::BANG.to_string(),
+                            token_type: token::BANG,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -130,91 +130,91 @@ impl Lexer {
             }
             '+' => (
                 token::Token {
-                    token_type: token::PLUS.to_string(),
+                    token_type: token::PLUS,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '-' => (
                 token::Token {
-                    token_type: token::MINUS.to_string(),
+                    token_type: token::MINUS,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '*' => (
                 token::Token {
-                    token_type: token::ASTERISK.to_string(),
+                    token_type: token::ASTERISK,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '/' => (
                 token::Token {
-                    token_type: token::SLASH.to_string(),
+                    token_type: token::SLASH,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '<' => (
                 token::Token {
-                    token_type: token::LT.to_string(),
+                    token_type: token::LT,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '>' => (
                 token::Token {
-                    token_type: token::RT.to_string(),
+                    token_type: token::RT,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '(' => (
                 token::Token {
-                    token_type: token::LPAREM.to_string(),
+                    token_type: token::LPAREM,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ')' => (
                 token::Token {
-                    token_type: token::RPAREM.to_string(),
+                    token_type: token::RPAREM,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '{' => (
                 token::Token {
-                    token_type: token::LBRACE.to_string(),
+                    token_type: token::LBRACE,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '}' => (
                 token::Token {
-                    token_type: token::RBRACE.to_string(),
+                    token_type: token::RBRACE,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '[' => (
                 token::Token {
-                    token_type: token::LBRACKET.to_string(),
+                    token_type: token::LBRACKET,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ']' => (
                 token::Token {
-                    token_type: token::RBRACKET.to_string(),
+                    token_type: token::RBRACKET,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '\u{0}' => (
                 token::Token {
-                    token_type: token::EOF.to_string(),
+                    token_type: token::EOF,
                     literal: "".to_string(),
                 },
                 false,
@@ -234,7 +234,7 @@ impl Lexer {
                     let literal = self.read_number();
                     (
                         token::Token {
-                            token_type: token::INTEGER.to_string(),
+                            token_type: token::INTEGER,
                             literal,
                         },
                         true,
@@ -242,7 +242,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::ILLEGAL.to_string(),
+                            token_type: token::ILLEGAL,
                             literal: self.ch.to_string(),
                         },
                         false,
