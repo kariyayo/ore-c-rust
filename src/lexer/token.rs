@@ -15,6 +15,8 @@ pub const ASSIGN: TokenType = "=";
 pub const BANG: TokenType = "!";
 pub const PLUS: TokenType = "+";
 pub const MINUS: TokenType = "-";
+pub const INCREMENT: TokenType = "++";
+pub const DECREMENT: TokenType = "--";
 pub const ASTERISK: TokenType = "*";
 pub const SLASH: TokenType = "/";
 pub const LT: TokenType = "<";

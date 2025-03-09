@@ -128,20 +128,46 @@ impl Lexer {
                     )
                 }
             }
-            '+' => (
-                token::Token {
-                    token_type: token::PLUS,
-                    literal: self.ch.to_string(),
-                },
-                false,
-            ),
-            '-' => (
-                token::Token {
-                    token_type: token::MINUS,
-                    literal: self.ch.to_string(),
-                },
-                false,
-            ),
+            '+' => {
+                if self.peek_char() == '+' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: token::INCREMENT,
+                            literal: "++".to_string(),
+                        },
+                        false,
+                    )
+                } else {
+                    (
+                        token::Token {
+                            token_type: token::PLUS,
+                            literal: self.ch.to_string(),
+                        },
+                        false,
+                    )
+                }
+            },
+            '-' => {
+                if self.peek_char() == '-' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: token::DECREMENT,
+                            literal: "--".to_string(),
+                        },
+                        false,
+                    )
+                } else {
+                    (
+                        token::Token {
+                            token_type: token::MINUS,
+                            literal: self.ch.to_string(),
+                        },
+                        false,
+                    )
+                }
+            },
             '*' => (
                 token::Token {
                     token_type: token::ASTERISK,
@@ -277,6 +303,8 @@ int main(int argc, char *argv[]) {
 10 == 10;
 10 != 9;
 
+++a
+
 !-/*5
 
 if (5 < 10) {
@@ -344,6 +372,7 @@ if (5 < 10) {
             (token::NOT_EQ, "!="),
             (token::INTEGER, "9"),
             (token::SEMICOLON, ";"),
+            (token::INCREMENT, "++"),
         ];
 
         let mut l = Lexer::new(input);
