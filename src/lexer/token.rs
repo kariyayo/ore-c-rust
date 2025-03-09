@@ -18,7 +18,7 @@ pub const MINUS: TokenType = "-";
 pub const ASTERISK: TokenType = "*";
 pub const SLASH: TokenType = "/";
 pub const LT: TokenType = "<";
-pub const RT: TokenType = ">";
+pub const GT: TokenType = ">";
 pub const EQ: TokenType = "==";
 pub const NOT_EQ: TokenType = "!=";
 

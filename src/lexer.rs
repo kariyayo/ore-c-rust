@@ -165,7 +165,7 @@ impl Lexer {
             ),
             '>' => (
                 token::Token {
-                    token_type: token::RT,
+                    token_type: token::GT,
                     literal: self.ch.to_string(),
                 },
                 false,
