@@ -237,6 +237,9 @@ impl Parser {
             TokenType::Bang | TokenType::Minus | TokenType::Increment | TokenType::Decrement => {
                 Some(self.parse_prefix_expression())
             }
+            TokenType::Lparem => {
+                Some(self.parse_grouped_expression())
+            }
             _ => {
                 None
             }
@@ -252,6 +255,16 @@ impl Parser {
         return self.cur_token.literal.parse()
             .map(|value| ast::Expression::Int { value })
             .map_err(|_| Error { errors: vec!["parse int error".to_string()] });
+    }
+
+    fn parse_grouped_expression(&mut self) -> Result<ast::Expression> {
+        self.next_token();
+        let exp = self.parse_expression(ExpressionPrecedence::Lowest);
+        if self.peek_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
+        }
+        self.next_token();
+        return exp;
     }
 
     // !, -, ++, -- の前置演算子をパースする
@@ -461,6 +474,10 @@ foobar;
             ("5 > 4 == 3 < 4;", "((5 > 4) == (3 < 4));"),
             ("5 < 4 != 3 > 4;", "((5 < 4) != (3 > 4));"),
             ("3 + 4 * 5 == 3 * 1 + 4 * 5;", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));"),
+            ("1 + (2 + 3) + 4;", "((1 + (2 + 3)) + 4);"),
+            ("(5 + 5) * 2;", "((5 + 5) * 2);"),
+            ("2 / (5 + 5);", "(2 / (5 + 5));"),
+            ("-(5 + 5);", "(-(5 + 5));"),
         ];
         for (input, expected) in tests.iter() {
             // when
