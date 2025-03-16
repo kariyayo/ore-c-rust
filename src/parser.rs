@@ -1,10 +1,8 @@
-use std::{collections::HashMap, sync::OnceLock};
-
-use ast::Expression;
-
+use std::collections::HashMap;
 use crate::lexer::{self, token::TokenType};
 
 mod ast;
+use ast::Expression;
 
 #[derive(Debug)]
 struct Error {
@@ -147,7 +145,7 @@ impl Parser {
     // <type_ref> <ident> = <expression>;
     // <type_ref> <ident>;
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_decl = self.parse_type(self.cur_token.literal.as_str());
+        let type_decl = ast::TypeRef { type_name: self.cur_token.literal.to_string() };
         if self.peek_token.token_type == TokenType::Ident {
             self.next_token();
         } else {
@@ -171,10 +169,9 @@ impl Parser {
         return expression.map(|exp| ast::Statement::ExpressionStatement { expression: exp });
     }
 
-    fn parse_type(&self, type_name: &str) -> ast::TypeRef {
-        let type_node = ast::TypeRef { type_name: type_name.to_string() };
-        return type_node;
-    }
+    // ======================
+    // ここから式に関する処理
+    // ======================
 
     // 現在のトークンの次のトークン優先順位を返す
     fn peek_precedence(&self) -> ExpressionPrecedence {
@@ -188,6 +185,7 @@ impl Parser {
 
     // 式をパースする
     fn parse_expression(&mut self, precedence: ExpressionPrecedence) -> Result<ast::Expression> {
+        // まず、前置演算子もしくはリテラルをパースする
         let prefix_result = self.prefix();
         match prefix_result {
             None => {
@@ -216,10 +214,7 @@ impl Parser {
                     self.next_token();
 
                     let infix_result = self.parse_infix_expression(left_exp);
-                    if infix_result.is_err() {
-                        return infix_result;
-                    }
-                    result = infix_result.unwrap();
+                    result = infix_result?;
                 }
             }
         }

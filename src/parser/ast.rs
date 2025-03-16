@@ -15,6 +15,15 @@ pub enum Statement {
     ExpressionStatement { expression: Expression },
 }
 
+/// 式を表すノード
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expression {
+    Int { value: i32 },
+    Identifier { value: String },
+    PrefixExpression { operator: String, right: Box<Expression> },
+    InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
+}
+
 impl Statement {
     pub fn to_string(&self) -> String {
         return match self {
@@ -35,15 +44,6 @@ impl Statement {
             },
         };
     }
-}
-
-/// 式を表すノード
-#[derive(Debug, PartialEq, Eq)]
-pub enum Expression {
-    Int { value: i32 },
-    Identifier { value: String },
-    PrefixExpression { operator: String, right: Box<Expression> },
-    InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
 }
 
 impl Expression {
