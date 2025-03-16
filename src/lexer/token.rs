@@ -1,63 +1,105 @@
-pub type TokenType = &'static str;
+#[derive(Copy, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum TokenType {
+    // tokens
+    Illegal,
+    Eof,
+    Comma,
+    Semicolon,
 
-// tokens
-pub const ILLEGAL: TokenType = "ILLEGAL";
-pub const EOF: TokenType = "EOF";
+    Ident,
+    Integer,
 
-pub const COMMA: TokenType = ",";
-pub const SEMICOLON: TokenType = ";";
+    // 演算子
+    Assign,
+    Bang,
+    Plus,
+    Minus,
+    Increment,
+    Decrement,
+    Asterisk,
+    Slash,
+    Lt,
+    Gt,
+    Eq,
+    NotEq,
 
-pub const IDENT: TokenType = "IDENT";
-pub const INTEGER: TokenType = "INTEGER";
+    // 括弧
+    Lparem,
+    Rparem,
+    Lbrace,
+    Rbrace,
+    Lbracket,
+    Rbracket,
 
-// 演算子
-pub const ASSIGN: TokenType = "=";
-pub const BANG: TokenType = "!";
-pub const PLUS: TokenType = "+";
-pub const MINUS: TokenType = "-";
-pub const INCREMENT: TokenType = "++";
-pub const DECREMENT: TokenType = "--";
-pub const ASTERISK: TokenType = "*";
-pub const SLASH: TokenType = "/";
-pub const LT: TokenType = "<";
-pub const GT: TokenType = ">";
-pub const EQ: TokenType = "==";
-pub const NOT_EQ: TokenType = "!=";
+    // キーワード
+    Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    If,
+    Else,
+    Switch,
+    Case,
+    Default,
+    Return,
+}
 
-// 括弧
-pub const LPAREM: TokenType = "(";
-pub const RPAREM: TokenType = ")";
-pub const LBRACE: TokenType = "{";
-pub const RBRACE: TokenType = "}";
-pub const LBRACKET: TokenType = "[";
-pub const RBRACKET: TokenType = "]";
-
-// キーワード
-pub const VOID: TokenType = "VOID";
-pub const CHAR: TokenType = "CHAR";
-pub const SHORT: TokenType = "SHORT";
-pub const INT: TokenType = "INT";
-pub const LONG: TokenType = "LONG";
-pub const IF: TokenType = "IF";
-pub const ELSE: TokenType = "ELSE";
-pub const SWITCH: TokenType = "SWITCH";
-pub const CASE: TokenType = "CASE";
-pub const DEFAULT: TokenType = "DEFAULT";
-pub const RETURN: TokenType = "RETURN";
+impl TokenType {
+    pub fn to_string(&self) -> &str {
+        match self {
+            TokenType::Illegal => "ILLEGAL",
+            TokenType::Eof => "EOF",
+            TokenType::Comma => ",",
+            TokenType::Semicolon => ";",
+            TokenType::Ident => "IDENT",
+            TokenType::Integer => "INTEGER",
+            TokenType::Assign => "=",
+            TokenType::Bang => "!",
+            TokenType::Plus => "+",
+            TokenType::Minus => "-",
+            TokenType::Increment => "++",
+            TokenType::Decrement => "--",
+            TokenType::Asterisk => "*",
+            TokenType::Slash => "/",
+            TokenType::Lt => "<",
+            TokenType::Gt => ">",
+            TokenType::Eq => "==",
+            TokenType::NotEq => "!=",
+            TokenType::Lparem => "(",
+            TokenType::Rparem => ")",
+            TokenType::Lbrace => "{",
+            TokenType::Rbrace => "}",
+            TokenType::Lbracket => "[",
+            TokenType::Rbracket => "]",
+            TokenType::Void => "VOID",
+            TokenType::Char => "CHAR",
+            TokenType::Short => "SHORT",
+            TokenType::Int => "INT",
+            TokenType::Long => "LONG",
+            TokenType::If => "IF",
+            TokenType::Else => "ELSE",
+            TokenType::Switch => "SWITCH",
+            TokenType::Case => "CASE",
+            TokenType::Default => "DEFAULT",
+            TokenType::Return => "RETURN",
+        }
+    }
+}
 
 pub fn lookup_ident(s: &str) -> TokenType {
     match s {
-        "char" => CHAR,
-        "short" => SHORT,
-        "int" => INT,
-        "long" => LONG,
-        "if" => IF,
-        "else" => ELSE,
-        "switch" => SWITCH,
-        "case" => CASE,
-        "default" => DEFAULT,
-        "return" => RETURN,
-        _ => IDENT,
+        "char" => TokenType::Char,
+        "short" => TokenType::Short,
+        "int" => TokenType::Int,
+        "long" => TokenType::Long,
+        "if" => TokenType::If,
+        "else" => TokenType::Else,
+        "switch" => TokenType::Switch,
+        "case" => TokenType::Case,
+        "default" => TokenType::Default,
+        "return" => TokenType::Return,
+        _ => TokenType::Ident,
     }
 }
 

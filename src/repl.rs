@@ -14,7 +14,7 @@ pub fn start() -> io::Result<()> {
         let mut l = lexer::Lexer::new(&line);
         loop {
             let token = l.next_token();
-            if token.token_type == lexer::token::EOF {
+            if token.token_type == lexer::token::TokenType::Eof {
                 break;
             }
             println!("{:?}", token);

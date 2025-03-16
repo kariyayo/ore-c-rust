@@ -1,3 +1,5 @@
+use token::TokenType;
+
 pub(crate) mod token;
 
 pub(crate) struct Lexer {
@@ -76,14 +78,14 @@ impl Lexer {
         let (tok, skip_read) = match self.ch {
             ',' => (
                 token::Token {
-                    token_type: token::COMMA,
+                    token_type: TokenType::Comma,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ';' => (
                 token::Token {
-                    token_type: token::SEMICOLON,
+                    token_type: TokenType::Semicolon,
                     literal: self.ch.to_string(),
                 },
                 false,
@@ -93,7 +95,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::EQ,
+                            token_type: TokenType::Eq,
                             literal: "==".to_string(),
                         },
                         false,
@@ -101,7 +103,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::ASSIGN,
+                            token_type: TokenType::Assign,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -113,7 +115,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::NOT_EQ,
+                            token_type: TokenType::NotEq,
                             literal: "!=".to_string(),
                         },
                         false,
@@ -121,7 +123,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::BANG,
+                            token_type: TokenType::Bang,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -133,7 +135,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::INCREMENT,
+                            token_type: TokenType::Increment,
                             literal: "++".to_string(),
                         },
                         false,
@@ -141,7 +143,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::PLUS,
+                            token_type: TokenType::Plus,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -153,7 +155,7 @@ impl Lexer {
                     self.read_char();
                     (
                         token::Token {
-                            token_type: token::DECREMENT,
+                            token_type: TokenType::Decrement,
                             literal: "--".to_string(),
                         },
                         false,
@@ -161,7 +163,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::MINUS,
+                            token_type: TokenType::Minus,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -170,77 +172,77 @@ impl Lexer {
             },
             '*' => (
                 token::Token {
-                    token_type: token::ASTERISK,
+                    token_type: TokenType::Asterisk,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '/' => (
                 token::Token {
-                    token_type: token::SLASH,
+                    token_type: TokenType::Slash,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '<' => (
                 token::Token {
-                    token_type: token::LT,
+                    token_type: TokenType::Lt,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '>' => (
                 token::Token {
-                    token_type: token::GT,
+                    token_type: TokenType::Gt,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '(' => (
                 token::Token {
-                    token_type: token::LPAREM,
+                    token_type: TokenType::Lparem,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ')' => (
                 token::Token {
-                    token_type: token::RPAREM,
+                    token_type: TokenType::Rparem,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '{' => (
                 token::Token {
-                    token_type: token::LBRACE,
+                    token_type: TokenType::Lbrace,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '}' => (
                 token::Token {
-                    token_type: token::RBRACE,
+                    token_type: TokenType::Rbrace,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '[' => (
                 token::Token {
-                    token_type: token::LBRACKET,
+                    token_type: TokenType::Lbracket,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             ']' => (
                 token::Token {
-                    token_type: token::RBRACKET,
+                    token_type: TokenType::Rbracket,
                     literal: self.ch.to_string(),
                 },
                 false,
             ),
             '\u{0}' => (
                 token::Token {
-                    token_type: token::EOF,
+                    token_type: TokenType::Eof,
                     literal: "".to_string(),
                 },
                 false,
@@ -260,7 +262,7 @@ impl Lexer {
                     let literal = self.read_number();
                     (
                         token::Token {
-                            token_type: token::INTEGER,
+                            token_type: TokenType::Integer,
                             literal,
                         },
                         true,
@@ -268,7 +270,7 @@ impl Lexer {
                 } else {
                     (
                         token::Token {
-                            token_type: token::ILLEGAL,
+                            token_type: TokenType::Illegal,
                             literal: self.ch.to_string(),
                         },
                         false,
@@ -314,65 +316,65 @@ if (5 < 10) {
 }
 ";
         let tests = vec![
-            (token::INT, "int"),
-            (token::IDENT, "five"),
-            (token::ASSIGN, "="),
-            (token::INTEGER, "5"),
-            (token::SEMICOLON, ";"),
-            (token::INT, "int"),
-            (token::IDENT, "add"),
-            (token::LPAREM, "("),
-            (token::INT, "int"),
-            (token::IDENT, "x"),
-            (token::COMMA, ","),
-            (token::INT, "int"),
-            (token::IDENT, "y"),
-            (token::RPAREM, ")"),
-            (token::LBRACE, "{"),
-            (token::RETURN, "return"),
-            (token::IDENT, "x"),
-            (token::PLUS, "+"),
-            (token::IDENT, "y"),
-            (token::SEMICOLON, ";"),
-            (token::RBRACE, "}"),
-            (token::INT, "int"),
-            (token::IDENT, "main"),
-            (token::LPAREM, "("),
-            (token::INT, "int"),
-            (token::IDENT, "argc"),
-            (token::COMMA, ","),
-            (token::CHAR, "char"),
-            (token::ASTERISK, "*"),
-            (token::IDENT, "argv"),
-            (token::LBRACKET, "["),
-            (token::RBRACKET, "]"),
-            (token::RPAREM, ")"),
-            (token::LBRACE, "{"),
-            (token::INT, "int"),
-            (token::IDENT, "ten"),
-            (token::ASSIGN, "="),
-            (token::INTEGER, "10"),
-            (token::SEMICOLON, ";"),
-            (token::INT, "int"),
-            (token::IDENT, "result"),
-            (token::ASSIGN, "="),
-            (token::IDENT, "add"),
-            (token::LPAREM, "("),
-            (token::IDENT, "five"),
-            (token::COMMA, ","),
-            (token::IDENT, "ten"),
-            (token::RPAREM, ")"),
-            (token::SEMICOLON, ";"),
-            (token::RBRACE, "}"),
-            (token::INTEGER, "10"),
-            (token::EQ, "=="),
-            (token::INTEGER, "10"),
-            (token::SEMICOLON, ";"),
-            (token::INTEGER, "10"),
-            (token::NOT_EQ, "!="),
-            (token::INTEGER, "9"),
-            (token::SEMICOLON, ";"),
-            (token::INCREMENT, "++"),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "five"),
+            (TokenType::Assign, "="),
+            (TokenType::Integer, "5"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "add"),
+            (TokenType::Lparem, "("),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "x"),
+            (TokenType::Comma, ","),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "y"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Return, "return"),
+            (TokenType::Ident, "x"),
+            (TokenType::Plus, "+"),
+            (TokenType::Ident, "y"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "main"),
+            (TokenType::Lparem, "("),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "argc"),
+            (TokenType::Comma, ","),
+            (TokenType::Char, "char"),
+            (TokenType::Asterisk, "*"),
+            (TokenType::Ident, "argv"),
+            (TokenType::Lbracket, "["),
+            (TokenType::Rbracket, "]"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "ten"),
+            (TokenType::Assign, "="),
+            (TokenType::Integer, "10"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Int, "int"),
+            (TokenType::Ident, "result"),
+            (TokenType::Assign, "="),
+            (TokenType::Ident, "add"),
+            (TokenType::Lparem, "("),
+            (TokenType::Ident, "five"),
+            (TokenType::Comma, ","),
+            (TokenType::Ident, "ten"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Integer, "10"),
+            (TokenType::Eq, "=="),
+            (TokenType::Integer, "10"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Integer, "10"),
+            (TokenType::NotEq, "!="),
+            (TokenType::Integer, "9"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Increment, "++"),
         ];
 
         let mut l = Lexer::new(input);

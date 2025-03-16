@@ -6,6 +6,7 @@ use crate::lexer::{self, token::TokenType};
 
 mod ast;
 
+#[derive(Debug)]
 struct Error {
     errors: Vec<String>,
 }
@@ -42,21 +43,32 @@ enum ExpressionPrecedence {
     Call, // myFunction(X)
 }
 
+fn is_infix_token_type(token_type: TokenType) -> bool {
+    return match token_type {
+        TokenType::Plus | TokenType::Minus | TokenType::Slash | TokenType::Asterisk | TokenType::Eq | TokenType::NotEq | TokenType::Lt | TokenType::Gt => {
+            true
+        }
+        _ => {
+            false
+        }
+    };
+}
+
 impl Parser {
     pub(crate) fn new(l: lexer::Lexer) -> Parser {
         let mut precedences: HashMap<TokenType, ExpressionPrecedence> = HashMap::with_capacity(8);
-        precedences.insert(lexer::token::EQ, ExpressionPrecedence::Equals);
-        precedences.insert(lexer::token::NOT_EQ, ExpressionPrecedence::Equals);
-        precedences.insert(lexer::token::LT, ExpressionPrecedence::LessGreater);
-        precedences.insert(lexer::token::GT, ExpressionPrecedence::LessGreater);
-        precedences.insert(lexer::token::PLUS, ExpressionPrecedence::Sum);
-        precedences.insert(lexer::token::MINUS, ExpressionPrecedence::Sum);
-        precedences.insert(lexer::token::SLASH, ExpressionPrecedence::Product);
-        precedences.insert(lexer::token::ASTERISK, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Eq, ExpressionPrecedence::Equals);
+        precedences.insert(TokenType::NotEq, ExpressionPrecedence::Equals);
+        precedences.insert(TokenType::Lt, ExpressionPrecedence::LessGreater);
+        precedences.insert(TokenType::Gt, ExpressionPrecedence::LessGreater);
+        precedences.insert(TokenType::Plus, ExpressionPrecedence::Sum);
+        precedences.insert(TokenType::Minus, ExpressionPrecedence::Sum);
+        precedences.insert(TokenType::Slash, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Asterisk, ExpressionPrecedence::Product);
         let mut p = Parser {
             l: l,
-            cur_token: lexer::token::Token { token_type: lexer::token::EOF, literal: "".to_string() },
-            peek_token: lexer::token::Token { token_type: lexer::token::EOF, literal: "".to_string() },
+            cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
+            peek_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
             errors: vec![],
             precedences: precedences,
         };
@@ -68,8 +80,8 @@ impl Parser {
 
     pub(crate) fn parse_program(&mut self) -> ast::Program {
         let mut program = ast::Program { statements: vec![] };
-        while self.cur_token.token_type != lexer::token::EOF {
-            if self.cur_token.token_type != lexer::token::SEMICOLON {
+        while self.cur_token.token_type != TokenType::Eof {
+            if self.cur_token.token_type != TokenType::Semicolon {
                 let stmt = self.parse_statement();
                 match stmt {
                     Ok(s) => {
@@ -94,16 +106,16 @@ impl Parser {
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.clone();
         self.peek_token = self.l.next_token();
-        println!("#### token_type:{}, literal:{} ####", self.cur_token.token_type, self.cur_token.literal);
+        println!("#### token_type:{:?}, literal:{} ####", self.cur_token.token_type, self.cur_token.literal);
     }
 
     // 文をパースする
     fn parse_statement(&mut self) -> Result<ast::Statement> {
         let result = match self.cur_token.token_type {
-            lexer::token::RETURN => {
+            TokenType::Return => {
                 self.parse_return_statement()
             }
-            lexer::token::INT => {
+            TokenType::Int => {
                 self.parse_vardecl_statement()
             }
             _ => {
@@ -111,9 +123,8 @@ impl Parser {
             }
         };
         self.next_token();
-        let s = &self.cur_token.literal;
-        if s != lexer::token::SEMICOLON {
-            let error_msg = format!("expected next token to be SEMICOLON, got {}", self.cur_token.token_type);
+        if self.cur_token.token_type != TokenType::Semicolon {
+            let error_msg = format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
             return if result.is_err() {
                 let mut errors = result.err().unwrap().errors.clone();
                 errors.push(error_msg);
@@ -137,14 +148,14 @@ impl Parser {
     // <type_ref> <ident>;
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
         let type_decl = self.parse_type(self.cur_token.literal.as_str());
-        if self.peek_token.token_type == lexer::token::IDENT {
+        if self.peek_token.token_type == TokenType::Ident {
             self.next_token();
         } else {
-            return Err(Error { errors: vec![format!("expected next token to be IDENT, got {}", self.cur_token.token_type)] });
+            return Err(Error { errors: vec![format!("expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
         }
         let name = self.cur_token.literal.clone();
 
-        if self.peek_token.token_type != lexer::token::ASSIGN {
+        if self.peek_token.token_type != TokenType::Assign {
             return Ok(ast::Statement::VarDecl { type_dec: type_decl, name, value: None });
         } else {
             self.next_token(); // `=` を読み飛ばす
@@ -167,69 +178,70 @@ impl Parser {
 
     // 現在のトークンの次のトークン優先順位を返す
     fn peek_precedence(&self) -> ExpressionPrecedence {
-        return *self.precedences.get(self.peek_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
+        return *self.precedences.get(&self.peek_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
     }
 
     // 現在のトークンの優先順位を返す
     fn cur_precedence(&self) -> ExpressionPrecedence {
-        return *self.precedences.get(self.cur_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
+        return *self.precedences.get(&self.cur_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
     }
 
     // 式をパースする
     fn parse_expression(&mut self, precedence: ExpressionPrecedence) -> Result<ast::Expression> {
-        let current_token_type = self.cur_token.token_type;
-        let prefix = match current_token_type {
-            lexer::token::IDENT => {
-                Some(self.parse_identifier())
+        let prefix_result = self.prefix();
+        match prefix_result {
+            None => {
+                return Err(Error { errors: vec![format!("no prefix parse function for {:?}", self.cur_token.token_type)] });
             }
-            lexer::token::INTEGER => {
-                Some(self.parse_integer_literal())
+            Some(Err(e)) => {
+                return Err(e);
             }
-            lexer::token::BANG | lexer::token::MINUS | lexer::token::INCREMENT | lexer::token::DECREMENT => {
-                Some(self.parse_prefix_expression())
-            }
-            _ => None
-        };
-        return match prefix {
             Some(Ok(exp)) => {
-                let mut result: Option<Result<Expression>> = None;
-                let mut left_exp = exp;
+                let mut result = exp;
                 loop {
                     // 次のトークンがセミコロンの場合は文が終了するので、ここでparse結果を返す。
                     // もしくは、
                     // 次のトークンを現在の演算子よりも優先する場合は、ここでparse結果を返す。
                     // 例えば、`5 * 5 + 3` の場合、`5 * 5` が終わった時点で `*` の優先順位（ `precedence` の値）が
                     // 次の演算子 `+` の優先順位（ `self.peek_precedence` の値）より高いので `5 * 5` のparse結果を返す。
-                    if self.peek_token.token_type == lexer::token::SEMICOLON || precedence >= self.peek_precedence() {
-                        result = Some(Ok(left_exp));
-                        break;
+                    if self.peek_token.token_type == TokenType::Semicolon || precedence >= self.peek_precedence() {
+                        return Ok(result);
                     }
-                    let peek_token_type = self.peek_token.token_type;
-                    match peek_token_type {
-                        lexer::token::PLUS | lexer::token::MINUS | lexer::token::SLASH | lexer::token::ASTERISK | lexer::token::EQ | lexer::token::NOT_EQ | lexer::token::LT | lexer::token::GT => {
-                            self.next_token();
-                            let infix = self.parse_infix_expression(left_exp);
-                            if infix.is_err() {
-                                // TODO: エラーだったら parse_infix_expression にmoveしたleft_expを戻してもらいたい
-                                result = Some(infix);
-                                break;
-                            }
-                            left_exp = infix.ok().unwrap();
-                        }
-                        _ => {
-                            break;
-                        }
+
+                    if !is_infix_token_type(self.peek_token.token_type) {
+                        return Ok(result);
                     }
+
+                    let left_exp = result;
+                    self.next_token();
+
+                    let infix_result = self.parse_infix_expression(left_exp);
+                    if infix_result.is_err() {
+                        return infix_result;
+                    }
+                    result = infix_result.unwrap();
                 }
-                return result.unwrap()
             }
-            Some(Err(e)) => {
-                Err(e)
+        }
+    }
+
+    fn prefix(&mut self) -> Option<Result<ast::Expression>> {
+        let current_token_type = self.cur_token.token_type;
+        let result = match current_token_type {
+            TokenType::Ident => {
+                Some(self.parse_identifier())
             }
-            None => {
-                Err(Error { errors: vec![format!("no prefix parse function for {}", current_token_type)] })
+            TokenType::Integer => {
+                Some(self.parse_integer_literal())
+            }
+            TokenType::Bang | TokenType::Minus | TokenType::Increment | TokenType::Decrement => {
+                Some(self.parse_prefix_expression())
+            }
+            _ => {
+                None
             }
         };
+        return result;
     }
 
     fn parse_identifier(&self) -> Result<ast::Expression> {
