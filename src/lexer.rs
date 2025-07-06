@@ -90,6 +90,13 @@ impl Lexer {
                 },
                 false,
             ),
+            ':' => (
+                token::Token {
+                    token_type: TokenType::Colon,
+                    literal: self.ch.to_string(),
+                },
+                false,
+            ),
             '=' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -310,9 +317,15 @@ int main(int argc, char *argv[]) {
 !-/*5
 
 if (5 < 10) {
-    return true;
+    return 1;
 } else {
-    return false;
+    return 0;
+}
+switch (x) {
+    case 1:
+        return 1;
+    default:
+        return 0;
 }
 ";
         let tests = vec![
@@ -375,6 +388,46 @@ if (5 < 10) {
             (TokenType::Integer, "9"),
             (TokenType::Semicolon, ";"),
             (TokenType::Increment, "++"),
+            (TokenType::Ident, "a"),
+            (TokenType::Bang, "!"),
+            (TokenType::Minus, "-"),
+            (TokenType::Slash, "/"),
+            (TokenType::Asterisk, "*"),
+            (TokenType::Integer, "5"),
+            (TokenType::If, "if"),
+            (TokenType::Lparem, "("),
+            (TokenType::Integer, "5"),
+            (TokenType::Lt, "<"),
+            (TokenType::Integer, "10"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Return, "return"),
+            (TokenType::Integer, "1"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Else, "else"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Return, "return"),
+            (TokenType::Integer, "0"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Switch, "switch"),
+            (TokenType::Lparem, "("),
+            (TokenType::Ident, "x"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Case, "case"),
+            (TokenType::Integer, "1"),
+            (TokenType::Colon, ":"),
+            (TokenType::Return, "return"),
+            (TokenType::Integer, "1"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Default, "default"),
+            (TokenType::Colon, ":"),
+            (TokenType::Return, "return"),
+            (TokenType::Integer, "0"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
         ];
 
         let mut l = Lexer::new(input);

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::lexer::{self, token::TokenType};
 
 mod ast;
-use ast::Expression;
+use ast::{Expression, Statement, SwitchBlock, SwitchLabel, SwitchLabelEntry};
 
 #[derive(Debug)]
 struct Error {
@@ -120,6 +120,12 @@ impl Parser {
             TokenType::If => {
                 self.parse_if_statement()
             }
+            TokenType::Switch => {
+                self.parse_switch_statement()
+            }
+            TokenType::Break => {
+                self.parse_breake_statement()
+            }
             _ => {
                 self.parse_expression_statement()
             }
@@ -219,6 +225,102 @@ impl Parser {
             self.next_token(); // read `else`
             let alternative = self.parse_statement()?;
             return Ok(ast::Statement::If { condition, consequence: Box::new(consequence), alternative: Some(Box::new(alternative)) });
+        }
+    }
+
+    // switch (<expression>) { case <value>: <statement>* case <value>: <statement>* ... default: <statement>* }
+    fn parse_switch_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Lparem {
+            return Err(Error { errors: vec![format!("expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let condition = self.parse_expression(ExpressionPrecedence::Lowest)?;
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Lbrace {
+            return Err(Error { errors: vec![format!("expected next token to be Lbrace, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let switch_body = self.parse_switch_body()?;
+        return Ok(ast::Statement::Switch {
+            condition,
+            switch_block: switch_body,
+        });
+    }
+
+    fn parse_switch_body(&mut self) -> Result<SwitchBlock> {
+        let mut body: Vec<Statement> = vec![];
+        let mut body_index = 0;
+        let mut switch_label_entry: Vec<SwitchLabelEntry> = vec![];
+        loop {
+            if self.cur_token.token_type != TokenType::Case && self.cur_token.token_type != TokenType::Default {
+                return Err(Error { errors: vec![format!("expected next token to be Case or Default, got {:?}", self.cur_token.token_type)] });
+            }
+            let mut labels: Vec<SwitchLabel> = vec![];
+
+            // `case <value>:` が連続することがあるのでループで処理する
+            while self.cur_token.token_type == TokenType::Case {
+                self.next_token();
+                let label = self.parse_expression(ExpressionPrecedence::Lowest)?;
+                self.next_token();
+                if self.cur_token.token_type == TokenType::Colon {
+                    self.next_token();
+                } else {
+                    return Err(Error { errors: vec![format!("expected next token to be Colon, got {:?}", self.cur_token.token_type)] });
+                }
+                labels.push(SwitchLabel::Case(label));
+            }
+
+            // `default:` を処理する
+            if self.cur_token.token_type == TokenType::Default {
+                self.next_token();
+                if self.cur_token.token_type == TokenType::Colon {
+                    self.next_token();
+                } else {
+                    return Err(Error { errors: vec![format!("expected next token to be Colon, got {:?}", self.cur_token.token_type)] });
+                }
+                labels.push(SwitchLabel::Default);
+            }
+
+            let label_entry = ast::SwitchLabelEntry {
+                labels,
+                start_index: body_index,
+            };
+            switch_label_entry.push(label_entry);
+
+            // ブロックを処理する
+            while self.cur_token.token_type != TokenType::Case && self.cur_token.token_type != TokenType::Default && self.cur_token.token_type != TokenType::Rbrace {
+                if self.cur_token.token_type == TokenType::Eof {
+                    return Err(Error { errors: vec!["unexpected end of file".to_string()] });
+                }
+                let stmt = self.parse_statement()?;
+                body.push(stmt);
+                body_index += 1;
+                self.next_token();
+            }
+
+            if self.cur_token.token_type == TokenType::Rbrace {
+                break;
+            }
+        }
+        return Ok(SwitchBlock { label_entries: switch_label_entry, body, });
+    }
+
+    // break;
+    fn parse_breake_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        if self.cur_token.token_type == TokenType::Semicolon {
+            return Ok(ast::Statement::Break);
+        } else {
+            return Err(Error { errors: vec![format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)] });
         }
     }
 
@@ -425,16 +527,17 @@ return 9876;
     fn test_identifier_expression() {
         // given
         let input = "
+x;
 foobar;
 ";
-        let expected = vec!["foobar"];
+        let expected = vec!["x", "foobar"];
 
         // when
         let mut p = Parser::new(lexer::Lexer::new(input));
         let program = p.parse_program();
 
         // then
-        assert_eq!(program.statements.len(), 1);
+        assert_eq!(program.statements.len(), 2);
         for (i, stmt) in program.statements.iter().enumerate() {
             let expected_value= expected[i];
             match stmt {
@@ -585,6 +688,124 @@ if (x < y) x + 2; else y;
                 }
                 _ => panic!("Statement is not Return"),
             }
+        }
+    }
+
+    #[test]
+    fn test_switch_statement() {
+        // given
+        let input = "
+switch (a) {
+    case 1:
+        x;
+        break;
+    case 2:
+        y;
+        break;
+    case 3:
+        aaa;
+        break;
+    default:
+        bbb;
+}
+
+switch (x) {
+case 1:
+case 2:
+    bbb;
+case 3:
+    ccc;
+    break;
+}
+";
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let program = p.parse_program();
+
+        // then
+        assert_eq!(program.statements.len(), 2);
+        let stmt1 = program.statements.first().unwrap();
+        let stmt2 = program.statements.get(1).unwrap();
+
+        // 1つ目のswitch文のチェック
+        if let ast::Statement::Switch { condition, switch_block } = stmt1 {
+            assert_eq!(condition.to_string(), "a");
+            // 各ラベルのチェック
+            assert_eq!(switch_block.label_entries.len(), 4);
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int { value: 1 }));
+            assert_eq!(switch_block.label_entries[0].start_index, 0);
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int { value: 2 }));
+            assert_eq!(switch_block.label_entries[1].start_index, 2);
+            assert_eq!(switch_block.label_entries[2].labels[0], SwitchLabel::Case(Expression::Int { value: 3 }));
+            assert_eq!(switch_block.label_entries[2].start_index, 4);
+            assert_eq!(switch_block.label_entries[3].labels[0], SwitchLabel::Default);
+            assert_eq!(switch_block.label_entries[3].start_index, 6);
+
+            assert_eq!(switch_block.body.len(), 7);
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[0] {
+                assert_eq!(expression, &Expression::Identifier { value: "x".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+            match &switch_block.body[1] {
+                Statement::Break => {}
+                _ => panic!("Expected Statement with Break"),
+            }
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[2] {
+                assert_eq!(expression, &Expression::Identifier { value: "y".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+            match &switch_block.body[3] {
+                Statement::Break => {}
+                _ => panic!("Expected Statement with Break"),
+            }
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[4] {
+                assert_eq!(expression, &Expression::Identifier { value: "aaa".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+            match &switch_block.body[5] {
+                Statement::Break => {}
+                _ => panic!("Expected Statement with Break"),
+            }
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[6] {
+                assert_eq!(expression, &Expression::Identifier { value: "bbb".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+        } else {
+            panic!("Statement is not Switch");
+        }
+
+        // 2つ目のswitch文のチェック
+        if let ast::Statement::Switch { condition, switch_block } = stmt2 {
+            assert_eq!(condition.to_string(), "x");
+            // 各ラベルのチェック
+            assert_eq!(switch_block.label_entries.len(), 2);
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int { value: 1 }));
+            assert_eq!(switch_block.label_entries[0].labels[1], SwitchLabel::Case(Expression::Int { value: 2 }));
+            assert_eq!(switch_block.label_entries[0].start_index, 0);
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int { value: 3 }));
+            assert_eq!(switch_block.label_entries[1].start_index, 1);
+
+            assert_eq!(switch_block.body.len(), 3);
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[0] {
+                assert_eq!(expression, &Expression::Identifier { value: "bbb".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+            if let Statement::ExpressionStatement { expression } = &switch_block.body[1] {
+                assert_eq!(expression, &Expression::Identifier { value: "ccc".to_string() });
+            } else {
+                panic!("Expected ExpressionStatement with Identifier");
+            }
+            match &switch_block.body[2] {
+                Statement::Break => {}
+                _ => panic!("Expected Statement with Break"),
+            }
+        } else {
+            panic!("Statement is not Switch");
         }
     }
 }

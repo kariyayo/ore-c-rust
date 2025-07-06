@@ -5,6 +5,7 @@ pub enum TokenType {
     Eof,
     Comma,
     Semicolon,
+    Colon,
 
     Ident,
     Integer,
@@ -42,6 +43,7 @@ pub enum TokenType {
     Switch,
     Case,
     Default,
+    Break,
     Return,
 }
 
@@ -52,6 +54,7 @@ impl TokenType {
             TokenType::Eof => "EOF",
             TokenType::Comma => ",",
             TokenType::Semicolon => ";",
+            TokenType::Colon => ":",
             TokenType::Ident => "IDENT",
             TokenType::Integer => "INTEGER",
             TokenType::Assign => "=",
@@ -83,6 +86,7 @@ impl TokenType {
             TokenType::Case => "CASE",
             TokenType::Default => "DEFAULT",
             TokenType::Return => "RETURN",
+            TokenType::Break => "BREAK",
         }
     }
 }
@@ -99,6 +103,7 @@ pub fn lookup_ident(s: &str) -> TokenType {
         "case" => TokenType::Case,
         "default" => TokenType::Default,
         "return" => TokenType::Return,
+        "break" => TokenType::Break,
         _ => TokenType::Ident,
     }
 }

@@ -9,12 +9,59 @@ pub struct TypeRef {
 }
 
 /// 文を表すノード
+#[derive(Debug, PartialEq, Eq)]
 pub enum Statement {
     Return { value: Option<Expression> },
+    Break,
     VarDecl { type_dec: TypeRef, name: String, value: Option<Expression> },
     Block { statements: Vec<Statement> },
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
+    Switch { condition: Expression, switch_block: SwitchBlock },
     ExpressionStatement { expression: Expression },
+}
+
+/// fallthrough に対応するため、switchブロック内の文を全てbodyにまとめておき、
+/// labels でラベルと、文のまとまり内における開始位置を管理する
+/// 
+/// 例えば、以下のようなC言語コードの場合、
+/// switch (x) {
+/// case 1:
+/// case 2:
+///     printf("One or Two\n");
+/// case 3:
+///     printf("Three\n");
+///     break;
+/// }
+/// 
+/// この SwitchBody は以下のように表現される
+/// SwitchBlock {
+///     labels_entries: vec![
+///         SwitchLabelEntry { labels: vec![Case(Int(1)), Case(Int(2))], start_index: 0 },
+///         SwitchLabelEntry { labels: vec![Case(Int(3))], start_index: 1 },
+///     ],
+///     body: vec![
+///         Statement(... "One or Two"),
+///         Statement(... "Three"),
+///         Break,
+///     ],
+/// }
+/// 
+#[derive(Debug, PartialEq, Eq)]
+pub struct SwitchBlock {
+    pub label_entries: Vec<SwitchLabelEntry>,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SwitchLabelEntry {
+    pub labels: Vec<SwitchLabel>,
+    pub start_index: i32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SwitchLabel {
+    Case(Expression),
+    Default,
 }
 
 /// 式を表すノード
@@ -35,6 +82,7 @@ impl Statement {
                     None => "return;".to_string(),
                 }
             },
+            Statement::Break => "break;".to_string(),
             Statement::VarDecl { type_dec, name, value } => {
                 match value {
                     Some(v) => format!("{} {} = {};", type_dec.type_name, name, v.to_string()),
@@ -57,6 +105,26 @@ impl Statement {
                     },
                     None => {},
                 }
+                result
+            },
+            Statement::Switch { condition, switch_block: switch_body } => {
+                let mut result = format!("switch ({}) {{\n", condition.to_string());
+                for label_entry in &switch_body.label_entries {
+                    for label in &label_entry.labels {
+                        match label {
+                            SwitchLabel::Case(expr) => {
+                                result.push_str(&format!("    case {}:\n", expr.to_string()));
+                            },
+                            SwitchLabel::Default => {
+                                result.push_str("    default:\n");
+                            },
+                        }
+                    }
+                    for stmt in &switch_body.body[label_entry.start_index as usize..] {
+                        result.push_str(&format!("        {}\n", stmt.to_string()));
+                    }
+                }
+                result.push_str("}");
                 result
             },
             Statement::ExpressionStatement { expression } => {
