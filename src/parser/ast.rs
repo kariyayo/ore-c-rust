@@ -13,10 +13,12 @@ pub struct TypeRef {
 pub enum Statement {
     Return { value: Option<Expression> },
     Break,
+    Continue,
     VarDecl { type_dec: TypeRef, name: String, value: Option<Expression> },
     Block { statements: Vec<Statement> },
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
+    While { condition: Expression, body: Box<Statement> },
     ExpressionStatement { expression: Expression },
 }
 
@@ -83,6 +85,7 @@ impl Statement {
                 }
             },
             Statement::Break => "break;".to_string(),
+            Statement::Continue => "continue;".to_string(),
             Statement::VarDecl { type_dec, name, value } => {
                 match value {
                     Some(v) => format!("{} {} = {};", type_dec.type_name, name, v.to_string()),
@@ -126,6 +129,9 @@ impl Statement {
                 }
                 result.push_str("}");
                 result
+            },
+            Statement::While { condition, body } => {
+                format!("while ({}) {}", condition.to_string(), body.to_string())
             },
             Statement::ExpressionStatement { expression } => {
                 format!("{};", expression.to_string())

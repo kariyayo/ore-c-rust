@@ -126,6 +126,12 @@ impl Parser {
             TokenType::Break => {
                 self.parse_break_statement()
             }
+            TokenType::While => {
+                self.parse_while_statement()
+            }
+            TokenType::Continue => {
+                self.parse_continue_statement()
+            }
             _ => {
                 self.parse_expression_statement()
             }
@@ -319,6 +325,44 @@ impl Parser {
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(ast::Statement::Break);
+        } else {
+            return Err(Error { errors: vec![format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)] });
+        }
+    }
+
+    // while (<expression>) <block_statement> | <expression_statement>
+    fn parse_while_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Lparem {
+            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let condition = self.parse_expression(ExpressionPrecedence::Lowest)?;
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let body = self.parse_statement()?;
+
+        if self.cur_token.token_type != TokenType::Rbrace && self.cur_token.token_type != TokenType::Semicolon {
+            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)] });
+        }
+
+        return Ok(ast::Statement::While {
+            condition,
+            body: Box::new(body),
+        });
+    }
+
+    // continue;
+    fn parse_continue_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        if self.cur_token.token_type == TokenType::Semicolon {
+            return Ok(ast::Statement::Continue);
         } else {
             return Err(Error { errors: vec![format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)] });
         }
@@ -806,6 +850,46 @@ case 3:
             }
         } else {
             panic!("Statement is not Switch");
+        }
+    }
+
+    #[test]
+    fn test_while_statement() {
+        // given
+        let input = "
+while (x > y) { x; y; }
+while (x < y) x + 2;
+while (x < y) {
+    if (x == 0) {
+        break;
+    }
+    if (y > 10) {
+        continue;
+    }
+}
+";
+
+        let expected = vec![
+            ("(x > y)", "{\n    x;\n    y;\n}"),
+            ("(x < y)", "(x + 2);"),
+            ("(x < y)", "{\n    if ((x == 0)) {\n    break;\n}\n    if ((y > 10)) {\n    continue;\n}\n}"),
+        ];
+
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let program = p.parse_program();
+
+        // then
+        assert_eq!(program.statements.len(), 3);
+        for (i, stmt) in program.statements.iter().enumerate() {
+            let (expected_condition, expected_body) = expected[i];
+            match stmt {
+                ast::Statement::While { condition, body} => {
+                    assert_eq!(condition.to_string(), expected_condition.to_string());
+                    assert_eq!(body.to_string(), expected_body.to_string());
+                }
+                _ => panic!("Statement is not While"),
+            }
         }
     }
 }
