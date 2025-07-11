@@ -329,6 +329,10 @@ switch (x) {
 }
 
 while (x < 10) continue;
+
+do {
+    return 1;
+} while (x < 10);
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -437,6 +441,19 @@ while (x < 10) continue;
             (TokenType::Integer, "10"),
             (TokenType::Rparem, ")"),
             (TokenType::Continue, "continue"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Do, "do"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Return, "return"),
+            (TokenType::Integer, "1"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::While, "while"),
+            (TokenType::Lparem, "("),
+            (TokenType::Ident, "x"),
+            (TokenType::Lt, "<"),
+            (TokenType::Integer, "10"),
+            (TokenType::Rparem, ")"),
         ];
 
         let mut l = Lexer::new(input);

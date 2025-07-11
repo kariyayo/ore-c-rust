@@ -13,7 +13,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 /// Pratt構文解析器
 /// 
-/// 構文解析関数を文法ルールに関連づけるのではなく、単一のトークンタイプに関連づける。
+/// 式の解析において、構文解析関数を文法ルールに関連づけるのではなく、単一のトークンタイプに関連づける。
 /// それぞれのトークンタイプに対して、中置演算子と前置演算子と、2つの構文解析関数を関連づける。
 struct Parser {
     l: lexer::Lexer,
@@ -128,6 +128,9 @@ impl Parser {
             }
             TokenType::While => {
                 self.parse_while_statement()
+            }
+            TokenType::Do => {
+                self.parse_dowhile_statement()
             }
             TokenType::Continue => {
                 self.parse_continue_statement()
@@ -355,6 +358,40 @@ impl Parser {
         return Ok(ast::Statement::While {
             condition,
             body: Box::new(body),
+        });
+    }
+
+    // do <block_statement> while (<expression>) | do <expression_statement> while (<expression>);
+    fn parse_dowhile_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        let body = self.parse_statement()?;
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::While {
+            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be While, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Lparem {
+            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let condition = self.parse_expression(ExpressionPrecedence::Lowest)?;
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Semicolon {
+            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+        }
+
+        return Ok(ast::Statement::DoWhile {
+            body: Box::new(body),
+            condition,
         });
     }
 
@@ -889,6 +926,37 @@ while (x < y) {
                     assert_eq!(body.to_string(), expected_body.to_string());
                 }
                 _ => panic!("Statement is not While"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_dowhile_statement() {
+        // given
+        let input = "
+do { x; y; } while (x > y);
+do x + 2; while (x < y);
+";
+
+        let expected = vec![
+            ("{\n    x;\n    y;\n}", "(x > y)"),
+            ("(x + 2);", "(x < y)"),
+        ];
+
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let program = p.parse_program();
+
+        // then
+        assert_eq!(program.statements.len(), 2);
+        for (i, stmt) in program.statements.iter().enumerate() {
+            let (expected_body, expected_condition) = expected[i];
+            match stmt {
+                ast::Statement::DoWhile { body, condition } => {
+                    assert_eq!(body.to_string(), expected_body.to_string());
+                    assert_eq!(condition.to_string(), expected_condition.to_string());
+                }
+                _ => panic!("Statement is not DoWhile"),
             }
         }
     }

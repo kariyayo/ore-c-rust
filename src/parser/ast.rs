@@ -19,6 +19,7 @@ pub enum Statement {
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
     While { condition: Expression, body: Box<Statement> },
+    DoWhile { body: Box<Statement>, condition: Expression },
     ExpressionStatement { expression: Expression },
 }
 
@@ -132,6 +133,9 @@ impl Statement {
             },
             Statement::While { condition, body } => {
                 format!("while ({}) {}", condition.to_string(), body.to_string())
+            },
+            Statement::DoWhile { body, condition } => {
+                format!("do {} while ({});", body.to_string(), condition.to_string())
             },
             Statement::ExpressionStatement { expression } => {
                 format!("{};", expression.to_string())
