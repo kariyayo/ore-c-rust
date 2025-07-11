@@ -33,6 +33,7 @@ struct Parser {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ExpressionPrecedence {
     Lowest,
+    Assign, // =
     Equals, // ==
     LessGreater, // > または <
     Sum, // +
@@ -43,7 +44,21 @@ enum ExpressionPrecedence {
 
 fn is_infix_token_type(token_type: TokenType) -> bool {
     return match token_type {
-        TokenType::Plus | TokenType::Minus | TokenType::Slash | TokenType::Asterisk | TokenType::Eq | TokenType::NotEq | TokenType::Lt | TokenType::Gt => {
+        TokenType::Plus
+        | TokenType::Minus
+        | TokenType::Slash
+        | TokenType::Asterisk
+        | TokenType::Percent
+        | TokenType::Eq
+        | TokenType::NotEq
+        | TokenType::Lt
+        | TokenType::Gt
+        | TokenType::Assign
+        | TokenType::PlusAssign
+        | TokenType::MinusAssign
+        | TokenType::AsteriskAssign
+        | TokenType::SlashAssign
+        | TokenType::PercentAssign => {
             true
         }
         _ => {
@@ -55,6 +70,12 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
 impl Parser {
     pub(crate) fn new(l: lexer::Lexer) -> Parser {
         let mut precedences: HashMap<TokenType, ExpressionPrecedence> = HashMap::with_capacity(8);
+        precedences.insert(TokenType::Assign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::PlusAssign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::MinusAssign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::AsteriskAssign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::SlashAssign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::PercentAssign, ExpressionPrecedence::Assign);
         precedences.insert(TokenType::Eq, ExpressionPrecedence::Equals);
         precedences.insert(TokenType::NotEq, ExpressionPrecedence::Equals);
         precedences.insert(TokenType::Lt, ExpressionPrecedence::LessGreater);
@@ -63,6 +84,7 @@ impl Parser {
         precedences.insert(TokenType::Minus, ExpressionPrecedence::Sum);
         precedences.insert(TokenType::Slash, ExpressionPrecedence::Product);
         precedences.insert(TokenType::Asterisk, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Percent, ExpressionPrecedence::Product);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -732,20 +754,34 @@ foobar;
 5 - 6;
 5 * 6;
 5 / 6;
+5 % 6;
 5 == 6;
 5 != 6;
 5 > 6;
 5 < 6;
+xyz = 10;
+a += 3;
+a -= 3;
+a *= 3;
+a /= 3;
+a %= 3;
 ";
         let expected = vec![
             ("+", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("-", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("*", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("/", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
+            ("%", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("==", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("!=", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             (">", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
             ("<", ast::Expression::Int { value: 5 }, ast::Expression::Int { value: 6 }),
+            ("=", ast::Expression::Identifier { value: "xyz".to_string() }, ast::Expression::Int { value: 10 }),
+            ("+=", ast::Expression::Identifier { value: "a".to_string() }, ast::Expression::Int { value: 3 }),
+            ("-=", ast::Expression::Identifier { value: "a".to_string() }, ast::Expression::Int { value: 3 }),
+            ("*=", ast::Expression::Identifier { value: "a".to_string() }, ast::Expression::Int { value: 3 }),
+            ("/=", ast::Expression::Identifier { value: "a".to_string() }, ast::Expression::Int { value: 3 }),
+            ("%=", ast::Expression::Identifier { value: "a".to_string() }, ast::Expression::Int { value: 3 }),
         ];
 
         // when
@@ -753,7 +789,7 @@ foobar;
         let program = p.parse_program();
 
         // then
-        assert_eq!(program.statements.len(), 8);
+        assert_eq!(program.statements.len(), 15);
         for (i, stmt) in program.statements.iter().enumerate() {
             let (expected_operator, expected_left, expected_right)= &expected[i];
             match stmt {
@@ -1027,13 +1063,13 @@ do x + 2; while (x < y);
     fn test_for_statement() {
         // given
         let input = "
-for (i; i < len; ++i) { x; }
+for (i = 0; i < len; ++i) { x; }
 for (;x < y;) x + 2;
 for (;;) ++a;
 ";
 
         let expected = vec![
-            ("i", "(i < len)", "(++i)", "{\n    x;\n}"),
+            ("(i = 0)", "(i < len)", "(++i)", "{\n    x;\n}"),
             ("", "(x < y)", "", "(x + 2);"),
             ("", "", "", "(++a);"),
         ];

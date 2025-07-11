@@ -147,6 +147,15 @@ impl Lexer {
                         },
                         false,
                     )
+                } else if self.peek_char() == '=' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::PlusAssign,
+                            literal: "+=".to_string(),
+                        },
+                        false,
+                    )
                 } else {
                     (
                         token::Token {
@@ -167,6 +176,15 @@ impl Lexer {
                         },
                         false,
                     )
+                } else if self.peek_char() == '=' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::MinusAssign,
+                            literal: "-=".to_string(),
+                        },
+                        false,
+                    )
                 } else {
                     (
                         token::Token {
@@ -177,20 +195,66 @@ impl Lexer {
                     )
                 }
             },
-            '*' => (
-                token::Token {
-                    token_type: TokenType::Asterisk,
-                    literal: self.ch.to_string(),
-                },
-                false,
-            ),
-            '/' => (
-                token::Token {
-                    token_type: TokenType::Slash,
-                    literal: self.ch.to_string(),
-                },
-                false,
-            ),
+            '*' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::AsteriskAssign,
+                            literal: "*=".to_string(),
+                        },
+                        false,
+                    )
+                } else {
+                    (
+                        token::Token {
+                            token_type: TokenType::Asterisk,
+                            literal: self.ch.to_string(),
+                        },
+                        false,
+                    )
+                }
+            },
+            '/' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::SlashAssign,
+                            literal: "/=".to_string(),
+                        },
+                        false,
+                    )
+                } else {
+                    (
+                        token::Token {
+                            token_type: TokenType::Slash,
+                            literal: self.ch.to_string(),
+                        },
+                        false,
+                    )
+                }
+            },
+            '%' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::PercentAssign,
+                            literal: "%=".to_string(),
+                        },
+                        false,
+                    )
+                } else {
+                    (
+                        token::Token {
+                            token_type: TokenType::Percent,
+                            literal: self.ch.to_string(),
+                        },
+                        false,
+                    )
+                }
+            },
             '<' => (
                 token::Token {
                     token_type: TokenType::Lt,
@@ -314,7 +378,14 @@ int main(int argc, char *argv[]) {
 
 ++a
 
-!-/*5
+!-/*%5
+
+x = 10
+a += 5
+a -= 5
+a *= 5
+a /= 5
+a %= 5
 
 if (5 < 10) {
     return 1;
@@ -401,6 +472,25 @@ for (;;) ++a;
             (TokenType::Minus, "-"),
             (TokenType::Slash, "/"),
             (TokenType::Asterisk, "*"),
+            (TokenType::Percent, "%"),
+            (TokenType::Integer, "5"),
+            (TokenType::Ident, "x"),
+            (TokenType::Assign, "="),
+            (TokenType::Integer, "10"),
+            (TokenType::Ident, "a"),
+            (TokenType::PlusAssign, "+="),
+            (TokenType::Integer, "5"),
+            (TokenType::Ident, "a"),
+            (TokenType::MinusAssign, "-="),
+            (TokenType::Integer, "5"),
+            (TokenType::Ident, "a"),
+            (TokenType::AsteriskAssign, "*="),
+            (TokenType::Integer, "5"),
+            (TokenType::Ident, "a"),
+            (TokenType::SlashAssign, "/="),
+            (TokenType::Integer, "5"),
+            (TokenType::Ident, "a"),
+            (TokenType::PercentAssign, "%="),
             (TokenType::Integer, "5"),
             (TokenType::If, "if"),
             (TokenType::Lparem, "("),
