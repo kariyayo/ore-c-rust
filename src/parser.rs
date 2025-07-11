@@ -132,6 +132,9 @@ impl Parser {
             TokenType::Do => {
                 self.parse_dowhile_statement()
             }
+            TokenType::For => {
+                self.parse_for_statement()
+            }
             TokenType::Continue => {
                 self.parse_continue_statement()
             }
@@ -392,6 +395,65 @@ impl Parser {
         return Ok(ast::Statement::DoWhile {
             body: Box::new(body),
             condition,
+        });
+    }
+
+    // for (<expression>; <expression>; <expression>) <block_statement> | <expression_statement>
+    fn parse_for_statement(&mut self) -> Result<ast::Statement> {
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Lparem {
+            return Err(Error { errors: vec![format!("[parse_for_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+        }
+
+        self.next_token();
+        let init =
+            if self.cur_token.token_type == TokenType::Semicolon {
+                None
+            } else {
+                let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Semicolon {
+                    return Err(Error { errors: vec![format!("[parse_for_statement -> init] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+                }
+                some
+            };
+        self.next_token();
+        let condition = 
+            if self.cur_token.token_type == TokenType::Semicolon {
+                None
+            } else {
+                let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Semicolon {
+                    return Err(Error { errors: vec![format!("[parse_for_statement -> condition] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+                }
+                some
+            };
+        self.next_token();
+        let post = 
+            if self.cur_token.token_type == TokenType::Rparem {
+                None
+            } else {
+                let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Rparem {
+                    return Err(Error { errors: vec![format!("[parse_for_statement -> post] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+                }
+                some
+            };
+
+        self.next_token();
+        let body = self.parse_statement()?;
+
+        if self.cur_token.token_type != TokenType::Rbrace && self.cur_token.token_type != TokenType::Semicolon {
+            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)] });
+        }
+
+        return Ok(ast::Statement::For {
+            init,
+            condition,
+            post,
+            body: Box::new(body),
         });
     }
 
@@ -960,4 +1022,40 @@ do x + 2; while (x < y);
             }
         }
     }
+
+    #[test]
+    fn test_for_statement() {
+        // given
+        let input = "
+for (i; i < len; ++i) { x; }
+for (;x < y;) x + 2;
+for (;;) ++a;
+";
+
+        let expected = vec![
+            ("i", "(i < len)", "(++i)", "{\n    x;\n}"),
+            ("", "(x < y)", "", "(x + 2);"),
+            ("", "", "", "(++a);"),
+        ];
+
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let program = p.parse_program();
+
+        // then
+        assert_eq!(program.statements.len(), 3);
+        for (i, stmt) in program.statements.iter().enumerate() {
+            let (expected_init, expected_condition, expected_post, expected_body) = expected[i];
+            match stmt {
+                ast::Statement::For { init, condition, post, body} => {
+                    assert_eq!(init.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_init.to_string());
+                    assert_eq!(condition.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_condition.to_string());
+                    assert_eq!(post.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_post.to_string());
+                    assert_eq!(body.to_string(), expected_body.to_string());
+                }
+                _ => panic!("Statement is not For"),
+            }
+        }
+    }
+
 }

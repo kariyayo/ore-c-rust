@@ -20,6 +20,7 @@ pub enum Statement {
     Switch { condition: Expression, switch_block: SwitchBlock },
     While { condition: Expression, body: Box<Statement> },
     DoWhile { body: Box<Statement>, condition: Expression },
+    For { init: Option<Expression>, condition: Option<Expression>, post: Option<Expression>, body: Box<Statement> },
     ExpressionStatement { expression: Expression },
 }
 
@@ -136,6 +137,21 @@ impl Statement {
             },
             Statement::DoWhile { body, condition } => {
                 format!("do {} while ({});", body.to_string(), condition.to_string())
+            },
+            Statement::For { init, condition, post, body } => {
+                let init_str = match init {
+                    Some(i) => i.to_string(),
+                    None => "".to_string(),
+                };
+                let condition_str = match condition {
+                    Some(c) => c.to_string(),
+                    None => "".to_string(),
+                };
+                let post_str = match post {
+                    Some(p) => p.to_string(),
+                    None => "".to_string(),
+                };
+                format!("for ({}, {}, {}) {}", init_str, condition_str, post_str, body.to_string())
             },
             Statement::ExpressionStatement { expression } => {
                 format!("{};", expression.to_string())

@@ -333,6 +333,8 @@ while (x < 10) continue;
 do {
     return 1;
 } while (x < 10);
+
+for (;;) ++a;
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -454,6 +456,15 @@ do {
             (TokenType::Lt, "<"),
             (TokenType::Integer, "10"),
             (TokenType::Rparem, ")"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::For, "for"),
+            (TokenType::Lparem, "("),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Rparem, ")"),
+            (TokenType::Increment, "++"),
+            (TokenType::Ident, "a"),
+            (TokenType::Semicolon, ";"),
         ];
 
         let mut l = Lexer::new(input);

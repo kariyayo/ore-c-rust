@@ -43,6 +43,7 @@ pub enum TokenType {
     Switch,
     Case,
     Default,
+    For,
     While,
     Do,
     Break,
@@ -92,6 +93,7 @@ impl TokenType {
             TokenType::Break => "BREAK",
             TokenType::While => "WHILE",
             TokenType::Do => "DO",
+            TokenType::For => "FOR",
             TokenType::Continue => "CONTINUE",
         }
     }
@@ -110,6 +112,7 @@ pub fn lookup_ident(s: &str) -> TokenType {
         "default" => TokenType::Default,
         "while" => TokenType::While,
         "do" => TokenType::Do,
+        "for" => TokenType::For,
         "return" => TokenType::Return,
         "break" => TokenType::Break,
         "continue" => TokenType::Continue,
