@@ -75,6 +75,7 @@ pub enum Expression {
     Identifier { value: String },
     PrefixExpression { operator: String, right: Box<Expression> },
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
+    PostfixExpression { operator: String, left: Box<Expression> },
 }
 
 impl Statement {
@@ -170,6 +171,9 @@ impl Expression {
             },
             Expression::InfixExpression { operator, left, right } => {
                 format!("({} {} {})", left.to_string(), operator, right.to_string())
+            },
+            Expression::PostfixExpression { operator, left } => {
+                format!("({}{})", left.to_string(), operator)
             },
         }
     }

@@ -30,15 +30,16 @@ struct Parser {
 }
 
 // 式の優先順位
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum ExpressionPrecedence {
     Lowest,
+    Postfix, // X++, X--
     Assign, // =
     Equals, // ==
     LessGreater, // > または <
     Sum, // +
     Product, // *
-    Prefix, // -X または !X
+    Prefix, // -X, !X, ++X, --X
     Call, // myFunction(X)
 }
 
@@ -67,6 +68,15 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
     };
 }
 
+fn is_postfix_token_type(token_type: TokenType) -> bool {
+    return match token_type {
+        TokenType::Increment | TokenType::Decrement => {
+            true
+        }
+        _ => false
+    }
+}
+
 impl Parser {
     pub(crate) fn new(l: lexer::Lexer) -> Parser {
         let mut precedences: HashMap<TokenType, ExpressionPrecedence> = HashMap::with_capacity(8);
@@ -85,6 +95,8 @@ impl Parser {
         precedences.insert(TokenType::Slash, ExpressionPrecedence::Product);
         precedences.insert(TokenType::Asterisk, ExpressionPrecedence::Product);
         precedences.insert(TokenType::Percent, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Increment, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Decrement, ExpressionPrecedence::Product);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -539,15 +551,19 @@ impl Parser {
                         return Ok(result);
                     }
 
-                    if !is_infix_token_type(self.peek_token.token_type) {
+                    if is_infix_token_type(self.peek_token.token_type) {
+                        let left_exp = result;
+                        self.next_token();
+                        let infix_result = self.parse_infix_expression(left_exp);
+                        result = infix_result?;
+                    } else if is_postfix_token_type(self.peek_token.token_type) {
+                        let left_exp = result;
+                        self.next_token();
+                        let postfix_result = self.parse_postfix_expression(left_exp);
+                        result = postfix_result;
+                    } else {
                         return Ok(result);
                     }
-
-                    let left_exp = result;
-                    self.next_token();
-
-                    let infix_result = self.parse_infix_expression(left_exp);
-                    result = infix_result?;
                 }
             }
         }
@@ -620,6 +636,15 @@ impl Parser {
                     right: Box::new(right),
                 }
             );
+    }
+
+    // ++, -- の後置演算子をパースする
+    fn parse_postfix_expression(&mut self, left: Expression) -> ast::Expression {
+        let operator = self.cur_token.literal.clone();
+        return ast::Expression::PostfixExpression {
+            operator,
+            left: Box::new(left),
+        }
     }
 }
 
@@ -799,6 +824,36 @@ a %= 3;
                     assert_eq!(right.as_ref(), expected_right);
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_postfix_expression() {
+        // given
+        let input = "
+i++;
+a--;
+";
+        let expected = vec![
+            ("++", ast::Expression::Identifier { value: "i".to_string() }),
+            ("--", ast::Expression::Identifier { value: "a".to_string() }),
+        ];
+
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let program = p.parse_program();
+
+        // then
+        assert_eq!(program.statements.len(), 2);
+        for (i, stmt) in program.statements.iter().enumerate() {
+            let (expected_operator, expected_right)= &expected[i];
+            match stmt {
+                ast::Statement::ExpressionStatement { expression: ast::Expression::PostfixExpression { operator, left } } => {
+                    assert_eq!(operator, expected_operator);
+                    assert_eq!(left.as_ref(), expected_right);
+                }
+                _ => panic!("Statement is not PostfixExpression"),
             }
         }
     }
@@ -1063,13 +1118,13 @@ do x + 2; while (x < y);
     fn test_for_statement() {
         // given
         let input = "
-for (i = 0; i < len; ++i) { x; }
+for (i = 0; i < len; i++) { x; }
 for (;x < y;) x + 2;
 for (;;) ++a;
 ";
 
         let expected = vec![
-            ("(i = 0)", "(i < len)", "(++i)", "{\n    x;\n}"),
+            ("(i = 0)", "(i < len)", "(i++)", "{\n    x;\n}"),
             ("", "(x < y)", "", "(x + 2);"),
             ("", "", "", "(++a);"),
         ];
