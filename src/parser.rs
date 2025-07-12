@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::lexer::{self, token::TokenType};
 
 mod ast;
-use ast::{Expression, Statement, SwitchBlock, SwitchLabel, SwitchLabelEntry};
+use ast::{Declarator, Expression, Statement, SwitchBlock, SwitchLabel, SwitchLabelEntry};
 
 #[derive(Debug)]
 struct Error {
@@ -199,26 +199,36 @@ impl Parser {
 
     // <type_ref> <ident> = <expression>;
     // <type_ref> <ident>;
+    // <type_ref> <ident>, <ident>, ...;
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_decl = ast::TypeRef { type_name: self.cur_token.literal.to_string() };
-        if self.peek_token.token_type == TokenType::Ident {
-            self.next_token();
-        } else {
-            return Err(Error { errors: vec![format!("[parse_vardecl_statement] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
-        }
-        let name = self.cur_token.literal.clone();
+        let type_dec = ast::TypeRef { type_name: self.cur_token.literal.to_string() };
+        let mut declarators: Vec<Declarator>= vec![];
 
-        let result = if self.peek_token.token_type != TokenType::Assign {
-            ast::Statement::VarDecl { type_dec: type_decl, name, value: None }
-        } else {
-            self.next_token(); // `=` を読み飛ばす
+        loop {
+            if self.peek_token.token_type == TokenType::Ident {
+                self.next_token();
+            } else {
+                return Err(Error { errors: vec![format!("[parse_vardecl_statement] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+            }
+            let name = self.cur_token.literal.clone();
+
+            let result = if self.peek_token.token_type != TokenType::Assign {
+                ast::Declarator { name, value: None }
+            } else {
+                self.next_token(); // `=` を読み飛ばす
+                self.next_token();
+                let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
+                ast::Declarator { name, value: Some(value) }
+            };
+            declarators.push(result);
             self.next_token();
-            let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
-            ast::Statement::VarDecl { type_dec: type_decl, name, value: Some(value) }
-        };
-        self.next_token();
+            if self.cur_token.token_type != TokenType::Comma {
+                break;
+            }
+        }
+
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(result);
+            return Ok(ast::Statement::VarDecl { type_dec, declarators });
         } else {
             let error_msg = format!("[parse_vardecl_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
             return Err(Error { errors: vec![error_msg] });
@@ -660,10 +670,14 @@ mod tests {
         let input = "
 int five = 5;
 int x = 10;
+int x;
+int x, y, z;
 ";
         let expected = vec![
-            ("int", "five", 5),
-            ("int", "x", 10),
+            vec![("int", "five", Some("5".to_string()))],
+            vec![("int", "x", Some("10".to_string()))],
+            vec![("int", "x", None)],
+            vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
         ];
 
         // when
@@ -672,14 +686,16 @@ int x = 10;
         let program = p.parse_program();
 
         // then
-        assert_eq!(program.statements.len(), 2);
+        assert_eq!(program.statements.len(), 4);
         for (i, stmt) in program.statements.iter().enumerate() {
-            let (expected_type, expected_name, expected_value) = expected[i];
             match stmt {
-                ast::Statement::VarDecl { type_dec, name, value } => {
-                    assert_eq!(type_dec, &ast::TypeRef { type_name: expected_type.to_string() });
-                    assert_eq!(name, expected_name);
-                    assert_eq!(value, &Some(Expression::Int { value: expected_value }));
+                ast::Statement::VarDecl { type_dec, declarators } => {
+                    for (j, declarator) in declarators.iter().enumerate() {
+                        let (expected_type, expected_name, expected_value) = &expected[i][j];
+                        assert_eq!(type_dec.type_name, expected_type.to_string());
+                        assert_eq!(declarator.name, *expected_name);
+                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                    }
                 }
                 _ => panic!("Statement is not VarDecl"),
             }

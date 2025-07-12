@@ -14,7 +14,7 @@ pub enum Statement {
     Return { value: Option<Expression> },
     Break,
     Continue,
-    VarDecl { type_dec: TypeRef, name: String, value: Option<Expression> },
+    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
     Block { statements: Vec<Statement> },
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
@@ -22,6 +22,12 @@ pub enum Statement {
     DoWhile { body: Box<Statement>, condition: Expression },
     For { init: Option<Expression>, condition: Option<Expression>, post: Option<Expression>, body: Box<Statement> },
     ExpressionStatement { expression: Expression },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Declarator {
+    pub name: String,
+    pub value: Option<Expression>,
 }
 
 /// fallthrough に対応するため、switchブロック内の文を全てbodyにまとめておき、
@@ -89,11 +95,20 @@ impl Statement {
             },
             Statement::Break => "break;".to_string(),
             Statement::Continue => "continue;".to_string(),
-            Statement::VarDecl { type_dec, name, value } => {
-                match value {
-                    Some(v) => format!("{} {} = {};", type_dec.type_name, name, v.to_string()),
-                    None => format!("{} {};", type_dec.type_name, name),
+            Statement::VarDecl { type_dec, declarators } => {
+                let mut result = format!("{} ", type_dec.type_name);
+                for (i, decl) in declarators.iter().enumerate() {
+                    result.push_str(&decl.name);
+                    if let Some(value) = &decl.value {
+                        result.push_str(&format!(" = {};", value.to_string()));
+                    } else {
+                        result.push(';');
+                    }
+                    if i < declarators.len() - 1 {
+                        result.push(' ');
+                    }
                 }
+                result
             },
             Statement::Block { statements } => {
                 let mut result = "{\n".to_string();
