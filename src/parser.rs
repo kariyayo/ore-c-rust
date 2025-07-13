@@ -33,12 +33,12 @@ struct Parser {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum ExpressionPrecedence {
     Lowest,
-    Postfix, // X++, X--
     Assign, // =
     Equals, // ==
     LessGreater, // > または <
     Sum, // +
     Product, // *
+    Postfix, // X++, X--
     Prefix, // -X, !X, ++X, --X
     Call, // myFunction(X)
 }
@@ -59,7 +59,8 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
         | TokenType::MinusAssign
         | TokenType::AsteriskAssign
         | TokenType::SlashAssign
-        | TokenType::PercentAssign => {
+        | TokenType::PercentAssign
+        | TokenType::Lparem => {
             true
         }
         _ => {
@@ -95,8 +96,9 @@ impl Parser {
         precedences.insert(TokenType::Slash, ExpressionPrecedence::Product);
         precedences.insert(TokenType::Asterisk, ExpressionPrecedence::Product);
         precedences.insert(TokenType::Percent, ExpressionPrecedence::Product);
-        precedences.insert(TokenType::Increment, ExpressionPrecedence::Product);
-        precedences.insert(TokenType::Decrement, ExpressionPrecedence::Product);
+        precedences.insert(TokenType::Increment, ExpressionPrecedence::Postfix);
+        precedences.insert(TokenType::Decrement, ExpressionPrecedence::Postfix);
+        precedences.insert(TokenType::Lparem, ExpressionPrecedence::Call);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -654,7 +656,7 @@ impl Parser {
                     if is_infix_token_type(self.peek_token.token_type) {
                         let left_exp = result;
                         self.next_token();
-                        let infix_result = self.parse_infix_expression(left_exp);
+                        let infix_result = self.infix(left_exp);
                         result = infix_result?;
                     } else if is_postfix_token_type(self.peek_token.token_type) {
                         let left_exp = result;
@@ -722,6 +724,41 @@ impl Parser {
                     right: Box::new(right),
                 }
             );
+    }
+
+    fn infix(&mut self, left: Expression) -> Result<ast::Expression> {
+        return if self.cur_token.token_type == TokenType::Lparem {
+            self.parse_function_call_expression(left)
+        } else {
+            self.parse_infix_expression(left)
+        };
+    }
+
+    fn parse_function_call_expression(&mut self, left: Expression) -> Result<ast::Expression> {
+        let function_name = match left {
+            ast::Expression::Identifier { value } => value,
+            _ => {
+                return Err(Error { errors: vec![format!("[parse_function_call_expression] expected `left` to be Expression::Identifier, got {:?}", left)] });
+            }
+        };
+        let mut arguments: Vec<ast::Expression> = vec![];
+        self.next_token(); // `(` を読み飛ばす
+        if self.cur_token.token_type != TokenType::Rparem {
+            loop {
+                let arg = self.parse_expression(ExpressionPrecedence::Lowest)?;
+                arguments.push(arg);
+                if self.peek_token.token_type != TokenType::Comma {
+                    self.next_token(); // cur_token is `)`
+                    break;
+                }
+                self.next_token(); // cur_token is `,`
+                self.next_token(); // `,` を読み飛ばす
+            }
+        }
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("[parse_function_call_expression] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(ast::Expression::FunctionCallExpression { function_name, arguments });
     }
 
     fn parse_infix_expression(&mut self, left: Expression) -> Result<ast::Expression> {
@@ -1069,6 +1106,44 @@ a %= 3;
                     assert_eq!(right.as_ref(), expected_right);
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_function_call_expression() {
+        // given
+        let input = "
+foo();
+bar(a, b);
+piyo(3+2, b);
+";
+        let expected = vec![
+            ("foo", vec![]),
+            ("bar", vec!["a", "b"]),
+            ("piyo", vec!["(3 + 2)", "b"]),
+        ];
+
+        // when
+        let mut p = Parser::new(lexer::Lexer::new(input));
+        let mut statements: Vec<ast::Statement> = vec![];
+        let rows_count = 3;
+        for _ in 0..rows_count {
+            statements.push(p.parse_statement().unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(statements.len(), rows_count);
+        for (i, stmt) in statements.iter().enumerate() {
+            let (expected_function_name, expected_arguments)= &expected[i];
+            match stmt {
+                ast::Statement::ExpressionStatement { expression: ast::Expression::FunctionCallExpression { function_name, arguments } } => {
+                    assert_eq!(function_name, expected_function_name);
+                    let xs: Vec<String> = arguments.iter().map(|x| x.to_string()).collect();
+                    assert_eq!(xs, *expected_arguments);
+                }
+                _ => panic!("Statement is not Expression::FunctionCallExpression"),
             }
         }
     }
