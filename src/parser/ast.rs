@@ -1,11 +1,24 @@
 
 pub struct Program {
-    pub statements: Vec<Statement>,
+    pub external_items: Vec<ExternalItem>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TypeRef {
     pub type_name: String,
+}
+
+/// トップレベルの宣言・定義を表すノード
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExternalItem {
+    FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
+    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Parameter {
+    pub type_dec: TypeRef,
+    pub name: String,
 }
 
 /// 文を表すノード
