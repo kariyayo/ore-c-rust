@@ -29,7 +29,8 @@ struct Parser {
     precedences: HashMap<TokenType, ExpressionPrecedence>,
 }
 
-// 式の優先順位
+// 式の優先順位。
+// 値が大きいほど優先順位が高く、ASTの深いレベルに配置される。
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum ExpressionPrecedence {
     Lowest,
@@ -38,8 +39,8 @@ enum ExpressionPrecedence {
     LessGreater, // > または <
     Sum, // +
     Product, // *
-    Postfix, // X++, X--
     Prefix, // -X, !X, ++X, --X
+    Postfix, // X++, X--
     Call, // myFunction(X)
 }
 
@@ -649,10 +650,15 @@ impl Parser {
                 let mut result = exp;
                 loop {
                     // 次のトークンがセミコロンの場合は文が終了するので、ここでparse結果を返す。
+                    //
                     // もしくは、
-                    // 次のトークンを現在の演算子よりも優先する場合は、ここでparse結果を返す。
-                    // 例えば、`5 * 5 + 3` の場合、`5 * 5` が終わった時点で `*` の優先順位（ `precedence` の値）が
-                    // 次の演算子 `+` の優先順位（ `self.peek_precedence` の値）より高いので `5 * 5` のparse結果を返す。
+                    //
+                    // 現在の演算子の優先順位(precedence)が、次のトークンの優先順位 以上 である場合は、
+                    // ここでparse結果を返す。
+                    // 結果的に、優先順位が高いほどASTの深いレベルに配置されることになる。
+                    //
+                    // 例えば、`5 * 5 + 3` の場合、`5 * 5` が終わった時点で `*` の優先順位(`precedence`)が
+                    // 次の演算子 `+` の優先順位(`self.peek_precedence`)より高いので `5 * 5` のparse結果を返す。
                     if self.peek_token.token_type == TokenType::Semicolon || precedence >= self.peek_precedence() {
                         return Ok(result);
                     }
@@ -1213,6 +1219,9 @@ a--;
             ("*ip + 10;", "((*ip) + 10);"),
             ("10 * *pn;", "(10 * (*pn));"),
             ("*(&x) + 1;", "((*(&x)) + 1);"),
+            ("++*ip;", "(++(*ip));"),
+            ("*ip++;", "(*(ip++));"),
+            ("(*ip)++;", "((*ip)++);"),
         ];
         for (input, expected) in tests.iter() {
             // when
