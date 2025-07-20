@@ -4,8 +4,18 @@ pub struct Program {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct TypeRef {
-    pub type_name: String,
+pub enum TypeRef {
+    Named(String), // 名前付き型（例: int, char, void など）
+    Pointer(Box<TypeRef>), // ポインタ型（例: int*）
+}
+
+impl TypeRef {
+    pub fn type_name(&self) -> String {
+        match self {
+            TypeRef::Named(name) => name.clone(),
+            TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
+        }
+    }
 }
 
 /// トップレベルの宣言・定義を表すノード
@@ -110,7 +120,7 @@ impl Statement {
             Statement::Break => "break;".to_string(),
             Statement::Continue => "continue;".to_string(),
             Statement::VarDecl { type_dec, declarators } => {
-                let mut result = format!("{} ", type_dec.type_name);
+                let mut result = format!("{} ", type_dec.type_name());
                 for (i, decl) in declarators.iter().enumerate() {
                     result.push_str(&decl.name);
                     if let Some(value) = &decl.value {
