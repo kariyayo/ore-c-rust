@@ -290,7 +290,11 @@ impl Parser {
     // <type_ref> <ident>;
     // <type_ref> <ident>, <ident>, ...;
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
+        let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
+        while self.peek_token.token_type == TokenType::Asterisk {
+            self.next_token(); // cur_token is `*`
+            type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
+        }
         self.next_token();
         let declarators: Vec<Declarator>= self.parse_declarators()?;
         if self.cur_token.token_type == TokenType::Semicolon {
@@ -305,7 +309,7 @@ impl Parser {
         let mut declarators: Vec<Declarator>= vec![];
         loop {
             if self.cur_token.token_type != TokenType::Ident {
-                return Err(Error { errors: vec![format!("[parse_vardecl_statement] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+                return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
             let name = self.cur_token.literal.clone();
 
@@ -680,7 +684,12 @@ impl Parser {
             TokenType::Integer => {
                 Some(self.parse_integer_literal())
             }
-            TokenType::Bang | TokenType::Minus | TokenType::Increment | TokenType::Decrement => {
+            TokenType::Bang
+            | TokenType::Minus
+            | TokenType::Increment
+            | TokenType::Decrement
+            | TokenType::Asterisk
+            | TokenType::Ampersand => {
                 Some(self.parse_prefix_expression())
             }
             TokenType::Lparem => {
@@ -713,7 +722,7 @@ impl Parser {
         return exp;
     }
 
-    // !, -, ++, -- の前置演算子をパースする
+    // !, -, ++, --, *, & の前置演算子をパースする
     fn parse_prefix_expression(&mut self) -> Result<ast::Expression> {
         let operator = self.cur_token.literal.clone();
         self.next_token();
@@ -1201,6 +1210,9 @@ a--;
             ("(5 + 5) * 2;", "((5 + 5) * 2);"),
             ("2 / (5 + 5);", "(2 / (5 + 5));"),
             ("-(5 + 5);", "(-(5 + 5));"),
+            ("*ip + 10;", "((*ip) + 10);"),
+            ("10 * *pn;", "(10 * (*pn));"),
+            ("*(&x) + 1;", "((*(&x)) + 1);"),
         ];
         for (input, expected) in tests.iter() {
             // when
@@ -1494,6 +1506,46 @@ for (;;) ++a;
                     assert_eq!(body.to_string(), expected_body.to_string());
                 }
                 _ => panic!("Statement is not For"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_pointer() {
+        // given
+        let input = "
+int *five;
+int* a;
+int **b;
+";
+        let expected = vec![
+            ("int*", "five", None),
+            ("int*", "a", None),
+            ("int**", "b", None),
+        ];
+
+        // when
+        let l = lexer::Lexer::new(input);
+        let mut p = Parser::new(l);
+        let mut statements: Vec<ast::Statement> = vec![];
+        let rows_count = 3;
+        for _ in 0..rows_count {
+            statements.push(p.parse_statement().unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(statements.len(), rows_count);
+        for (i, stmt) in statements.iter().enumerate() {
+            match stmt {
+                ast::Statement::VarDecl { type_dec, declarators } => {
+                    let declarator = declarators.first().unwrap();
+                    let (expected_type, expected_name, expected_value) = &expected[i];
+                    assert_eq!(type_dec.type_name(), expected_type.to_string());
+                    assert_eq!(declarator.name, *expected_name);
+                    assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                }
+                _ => panic!("Statement is not VarDecl"),
             }
         }
     }

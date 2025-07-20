@@ -255,6 +255,13 @@ impl Lexer {
                     )
                 }
             },
+            '&' => (
+                token::Token {
+                    token_type: TokenType::Ampersand,
+                    literal: self.ch.to_string(),
+                },
+                false,
+            ),
             '<' => (
                 token::Token {
                     token_type: TokenType::Lt,
@@ -378,7 +385,7 @@ int main(int argc, char *argv[]) {
 
 ++a
 
-!-/*%5
+!-/*%&5
 
 x = 10
 a += 5
@@ -473,6 +480,7 @@ for (;;) ++a;
             (TokenType::Slash, "/"),
             (TokenType::Asterisk, "*"),
             (TokenType::Percent, "%"),
+            (TokenType::Ampersand, "&"),
             (TokenType::Integer, "5"),
             (TokenType::Ident, "x"),
             (TokenType::Assign, "="),

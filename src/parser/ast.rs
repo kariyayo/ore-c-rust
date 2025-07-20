@@ -6,12 +6,14 @@ pub struct Program {
 #[derive(Debug, PartialEq, Eq)]
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
+    Pointer(Box<TypeRef>), // ポインタ型（例: int*）
 }
 
 impl TypeRef {
     pub fn type_name(&self) -> String {
         match self {
             TypeRef::Named(name) => name.clone(),
+            TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
         }
     }
 }
