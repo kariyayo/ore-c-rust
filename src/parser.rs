@@ -147,9 +147,9 @@ impl Parser {
                 // 関数宣言で、返り値の型を省略している場合を考慮する
                 let type_dec = if self.peek_token.token_type == TokenType::Lparem {
                     // 省略されている場合は、int型とする
-                    ast::TypeRef { type_name: "int".to_string() }
+                    ast::TypeRef::Named("int".to_string())
                 } else {
-                    let tmp = ast::TypeRef { type_name: self.cur_token.literal.to_string() };
+                    let tmp = ast::TypeRef::Named(self.cur_token.literal.to_string());
                     self.next_token();
                     tmp
                 };
@@ -206,7 +206,7 @@ impl Parser {
             return Ok(parameters);
         }
         loop {
-            let type_dec = ast::TypeRef { type_name: self.cur_token.literal.clone() };
+            let type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
             self.next_token();
             if self.cur_token.token_type != TokenType::Ident {
                 return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
@@ -290,7 +290,7 @@ impl Parser {
     // <type_ref> <ident>;
     // <type_ref> <ident>, <ident>, ...;
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_dec = ast::TypeRef { type_name: self.cur_token.literal.to_string() };
+        let type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
         self.next_token();
         let declarators: Vec<Declarator>= self.parse_declarators()?;
         if self.cur_token.token_type == TokenType::Semicolon {
@@ -822,7 +822,7 @@ int x, y, z;
                 ast::ExternalItem::VarDecl { type_dec, declarators } => {
                     for (j, declarator) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
-                        assert_eq!(type_dec.type_name, expected_type.to_string());
+                        assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
                         assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
                     }
@@ -850,11 +850,11 @@ Person createPerson(int age);
                 "add",
                 vec![
                     ast::Parameter {
-                        type_dec: ast::TypeRef { type_name: "int".to_string() },
+                        type_dec: ast::TypeRef::Named("int".to_string()),
                         name: "a".to_string(),
                     },
                     ast::Parameter {
-                        type_dec: ast::TypeRef { type_name: "int".to_string() },
+                        type_dec: ast::TypeRef::Named("int".to_string()),
                         name: "b".to_string(),
                     }
                 ],
@@ -871,7 +871,7 @@ Person createPerson(int age);
                 "createPerson",
                 vec![
                     ast::Parameter {
-                        type_dec: ast::TypeRef { type_name: "int".to_string() },
+                        type_dec: ast::TypeRef::Named("int".to_string()),
                         name: "age".to_string(),
                     },
                 ],
@@ -895,7 +895,7 @@ Person createPerson(int age);
             match item {
                 ast::ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } => {
                     let (expected_return_type, expected_name, expected_parameters, expected_body) = &expected[i];
-                    assert_eq!(return_type_dec.type_name, expected_return_type.to_string());
+                    assert_eq!(return_type_dec.type_name(), expected_return_type.to_string());
                     assert_eq!(*name, *expected_name);
                     assert_eq!(parameters, expected_parameters);
                     assert_eq!(body.as_ref().map(|x| x.to_string()), *expected_body);
@@ -938,7 +938,7 @@ int x, y, z;
                 ast::Statement::VarDecl { type_dec, declarators } => {
                     for (j, declarator) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
-                        assert_eq!(type_dec.type_name, expected_type.to_string());
+                        assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
                         assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
                     }
