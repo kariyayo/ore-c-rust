@@ -42,6 +42,7 @@ enum ExpressionPrecedence {
     Prefix, // -X, !X, ++X, --X
     Postfix, // X++, X--
     Call, // myFunction(X)
+    Index,
 }
 
 fn is_infix_token_type(token_type: TokenType) -> bool {
@@ -61,7 +62,8 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
         | TokenType::AsteriskAssign
         | TokenType::SlashAssign
         | TokenType::PercentAssign
-        | TokenType::Lparem => {
+        | TokenType::Lparem
+        | TokenType::Lbracket => {
             true
         }
         _ => {
@@ -100,6 +102,7 @@ impl Parser {
         precedences.insert(TokenType::Increment, ExpressionPrecedence::Postfix);
         precedences.insert(TokenType::Decrement, ExpressionPrecedence::Postfix);
         precedences.insert(TokenType::Lparem, ExpressionPrecedence::Call);
+        precedences.insert(TokenType::Lbracket, ExpressionPrecedence::Index);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -811,6 +814,8 @@ impl Parser {
     fn infix(&mut self, left: Expression) -> Result<ast::Expression> {
         return if self.cur_token.token_type == TokenType::Lparem {
             self.parse_function_call_expression(left)
+        } else if self.cur_token.token_type == TokenType::Lbracket {
+            self.parse_index_expression(left)
         } else {
             self.parse_infix_expression(left)
         };
@@ -841,6 +846,19 @@ impl Parser {
             return Err(Error { errors: vec![format!("[parse_function_call_expression] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
         }
         return Ok(ast::Expression::FunctionCallExpression { function_name, arguments });
+    }
+
+    fn parse_index_expression(&mut self, left: Expression) -> Result<ast::Expression> {
+        self.next_token();
+        let right = self.parse_expression(ExpressionPrecedence::Lowest)?;
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Rbracket {
+            return Err(Error { errors: vec![format!("[parse_index_expression] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(ast::Expression::IndexExpression {
+            left: Box::new(left),
+            index: Box::new(right),
+        });
     }
 
     fn parse_infix_expression(&mut self, left: Expression) -> Result<ast::Expression> {
@@ -1289,6 +1307,9 @@ a--;
             ("++*ip;", "(++(*ip));"),
             ("*ip++;", "(*(ip++));"),
             ("(*ip)++;", "((*ip)++);"),
+            ("a[1] + 3;", "((a[1]) + 3);"),
+            ("&a[0];", "(&(a[0]));"),
+            ("a[x + i];", "(a[(x + i)]);"),
         ];
         for (input, expected) in tests.iter() {
             // when

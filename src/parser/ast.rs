@@ -109,6 +109,7 @@ pub enum Expression {
     PostfixExpression { operator: String, left: Box<Expression> },
     FunctionCallExpression { function_name: String, arguments: Vec<Expression> },
     ArrayInitializerExpression { elements: Vec<Expression> },
+    IndexExpression { left: Box<Expression>, index: Box<Expression> },
 }
 
 impl Statement {
@@ -220,6 +221,9 @@ impl Expression {
             Expression::ArrayInitializerExpression { elements } => {
                 let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
                 format!("{{{}}}", args.join(", "))
+            },
+            Expression::IndexExpression { left, index } => {
+                format!("({}[{}])", left.to_string(), index.to_string())
             },
         }
     }
