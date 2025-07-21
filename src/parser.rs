@@ -291,6 +291,8 @@ impl Parser {
     // <type_ref> <ident>;
     // <type_ref> <ident>, <ident>, ...;
     // <type_ref> * <ident>;
+    // <type_ref> <ident>[<size>];
+    // <type_ref> <ident>[] = {<expression>, <expression>, ...};
     //
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
@@ -327,7 +329,35 @@ impl Parser {
             }
             let name = self.cur_token.literal.clone();
 
+            // array?
+            while self.peek_token.token_type == TokenType::Lbracket {
+                self.next_token(); // cur_token is `[`
+                self.next_token();
+                if self.cur_token.token_type == TokenType::Rbracket {
+                    // <type_ref> <ident>[] = {<expression>, <expression>, ...};
+                    type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
+                    self.next_token();
+                } else {
+                    // <type_ref> <ident>[<size>];
+                    if self.cur_token.token_type != TokenType::Integer {
+                        return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Integer, got {:?}", self.cur_token.token_type)] });
+                    }
+                    let size = self.cur_token.literal
+                        .parse::<u32>()
+                        .map_err(|_| Error { errors: vec![format!("[parse_declarators] failed to parse integer size from {:?}", self.cur_token.literal)] })?;
+                    type_dec = ast::TypeRef::Array(Box::new(type_dec), Some(size));
+                    self.next_token();
+                    if self.cur_token.token_type != TokenType::Rbracket {
+                        return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be RBracket, got {:?}", self.cur_token.token_type)] });
+                    }
+                }
+            }
+
             let declarator = if self.peek_token.token_type != TokenType::Assign {
+                // 値の指定がない、かつ、サイズが指定されていない配列型の場合はエラー
+                if let ast::TypeRef::Array(_, None) = type_dec {
+                    return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Assign, got {:?}", self.peek_token.token_type)] });
+                }
                 ast::Declarator { name, value: None }
             } else {
                 self.next_token(); // cur_token is `=`
@@ -1534,24 +1564,28 @@ for (;;) ++a;
     }
 
     #[test]
-    fn test_pointer() {
+    fn test_vardecl_pointer_array() {
         // given
         let input = "
 int *five;
 int* a;
 int **b;
+int a[10];
+int b[3][5];
 ";
         let expected = vec![
             ("int*", "five", None),
             ("int*", "a", None),
             ("int**", "b", None),
+            ("int[10]", "a", None),
+            ("int[3][5]", "b", None),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 3;
+        let rows_count = 5;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();

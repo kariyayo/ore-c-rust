@@ -7,6 +7,7 @@ pub struct Program {
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
+    Array(Box<TypeRef>, Option<u32>), // 配列型（例: int[10]）
 }
 
 impl TypeRef {
@@ -14,6 +15,7 @@ impl TypeRef {
         match self {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
+            TypeRef::Array(type_ref, size) => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
         }
     }
 }
