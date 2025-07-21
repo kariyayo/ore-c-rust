@@ -7,6 +7,7 @@ pub struct Program {
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
+    Array(Box<TypeRef>, Option<u32>), // 配列型（例: int[10]）
 }
 
 impl TypeRef {
@@ -14,6 +15,7 @@ impl TypeRef {
         match self {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
+            TypeRef::Array(type_ref, size) => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
         }
     }
 }
@@ -22,7 +24,7 @@ impl TypeRef {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExternalItem {
     FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
-    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
+    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,7 +39,7 @@ pub enum Statement {
     Return { value: Option<Expression> },
     Break,
     Continue,
-    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
+    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
     Block { statements: Vec<Statement> },
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
@@ -106,6 +108,8 @@ pub enum Expression {
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
     PostfixExpression { operator: String, left: Box<Expression> },
     FunctionCallExpression { function_name: String, arguments: Vec<Expression> },
+    ArrayInitializerExpression { elements: Vec<Expression> },
+    IndexExpression { left: Box<Expression>, index: Box<Expression> },
 }
 
 impl Statement {
@@ -119,20 +123,16 @@ impl Statement {
             },
             Statement::Break => "break;".to_string(),
             Statement::Continue => "continue;".to_string(),
-            Statement::VarDecl { type_dec, declarators } => {
-                let mut result = format!("{} ", type_dec.type_name());
-                for (i, decl) in declarators.iter().enumerate() {
-                    result.push_str(&decl.name);
-                    if let Some(value) = &decl.value {
-                        result.push_str(&format!(" = {};", value.to_string()));
-                    } else {
-                        result.push(';');
+            Statement::VarDecl { declarators } => {
+                let mut parts: Vec<String> = vec![];
+                for (type_ref, declarator) in declarators {
+                    let mut s = format!("{} {}", type_ref.type_name(), declarator.name);
+                    if let Some(value) = &declarator.value {
+                        s.push_str(&format!(" = {}", value.to_string()));
                     }
-                    if i < declarators.len() - 1 {
-                        result.push(' ');
-                    }
+                    parts.push(s);
                 }
-                result
+                format!("{};", parts.join(", "))
             },
             Statement::Block { statements } => {
                 let mut result = "{\n".to_string();
@@ -217,6 +217,13 @@ impl Expression {
             Expression::FunctionCallExpression { function_name, arguments } => {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.to_string()).collect();
                 format!("{}({})", function_name, args.join(", "))
+            },
+            Expression::ArrayInitializerExpression { elements } => {
+                let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
+                format!("{{{}}}", args.join(", "))
+            },
+            Expression::IndexExpression { left, index } => {
+                format!("({}[{}])", left.to_string(), index.to_string())
             },
         }
     }
