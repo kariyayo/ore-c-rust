@@ -336,7 +336,6 @@ impl Parser {
                 if self.cur_token.token_type == TokenType::Rbracket {
                     // <type_ref> <ident>[] = {<expression>, <expression>, ...};
                     type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
-                    self.next_token();
                 } else {
                     // <type_ref> <ident>[<size>];
                     if self.cur_token.token_type != TokenType::Integer {
@@ -745,6 +744,9 @@ impl Parser {
             TokenType::Lparem => {
                 Some(self.parse_grouped_expression())
             }
+            TokenType::Lbrace => {
+                Some(self.parse_array_initializer_expression())
+            }
             _ => {
                 None
             }
@@ -770,6 +772,27 @@ impl Parser {
         }
         self.next_token();
         return exp;
+    }
+
+    fn parse_array_initializer_expression(&mut self) -> Result<ast::Expression> {
+        self.next_token();
+        let mut elements: Vec<ast::Expression> = vec![];
+        if self.cur_token.token_type == TokenType::Rbrace {
+            return Ok(ast::Expression::ArrayInitializerExpression { elements });
+        }
+        while self.cur_token.token_type != TokenType::Rbrace {
+            let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
+            elements.push(value);
+            self.next_token();
+            if self.cur_token.token_type != TokenType::Comma {
+                break;
+            }
+            self.next_token(); // `,` を読み飛ばす
+        }
+        if self.cur_token.token_type != TokenType::Rbrace {
+            return Err(Error { errors: vec![format!("[parse_array_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(ast::Expression::ArrayInitializerExpression { elements });
     }
 
     // !, -, ++, --, *, & の前置演算子をパースする
@@ -1572,6 +1595,10 @@ int* a;
 int **b;
 int a[10];
 int b[3][5];
+int c[] = { 1, 2 };
+int d[][4] = { {1, 2, 3, 4}, {1, 2, 3, 4} };
+int e[] = {};
+int f[] = {1, 2, };
 ";
         let expected = vec![
             ("int*", "five", None),
@@ -1579,13 +1606,17 @@ int b[3][5];
             ("int**", "b", None),
             ("int[10]", "a", None),
             ("int[3][5]", "b", None),
+            ("int[]", "c", Some("{1, 2}")),
+            ("int[][4]", "d", Some("{{1, 2, 3, 4}, {1, 2, 3, 4}}")),
+            ("int[]", "e", Some("{}")),
+            ("int[]", "f", Some("{1, 2}")),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 5;
+        let rows_count = 9;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
@@ -1600,7 +1631,7 @@ int b[3][5];
                     let (expected_type, expected_name, expected_value) = &expected[i];
                     assert_eq!(type_dec.type_name(), expected_type.to_string());
                     assert_eq!(declarator.name, *expected_name);
-                    assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                    assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x|x.to_string()));
                 }
                 _ => panic!("Statement is not VarDecl"),
             }

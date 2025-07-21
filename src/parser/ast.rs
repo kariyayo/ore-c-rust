@@ -108,6 +108,7 @@ pub enum Expression {
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
     PostfixExpression { operator: String, left: Box<Expression> },
     FunctionCallExpression { function_name: String, arguments: Vec<Expression> },
+    ArrayInitializerExpression { elements: Vec<Expression> },
 }
 
 impl Statement {
@@ -215,6 +216,10 @@ impl Expression {
             Expression::FunctionCallExpression { function_name, arguments } => {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.to_string()).collect();
                 format!("{}({})", function_name, args.join(", "))
+            },
+            Expression::ArrayInitializerExpression { elements } => {
+                let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
+                format!("{{{}}}", args.join(", "))
             },
         }
     }
