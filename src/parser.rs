@@ -210,16 +210,33 @@ impl Parser {
             return Ok(parameters);
         }
         loop {
-            let type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
+            let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
             self.next_token();
+
+            // pointer?
+            while self.cur_token.token_type == TokenType::Asterisk {
+                type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
+                self.next_token();
+            }
+
             if self.cur_token.token_type != TokenType::Ident {
                 return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
-            let parameter = ast::Parameter {
-                type_dec,
-                name: self.cur_token.literal.clone(),
-            };
+            let name = self.cur_token.literal.clone();
+
+            // array?
+            while self.peek_token.token_type == TokenType::Lbracket {
+                self.next_token(); // cur_token is `[`
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Rbracket {
+                    return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+                }
+                type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
+            }
+
+            let parameter = ast::Parameter { type_dec, name };
             parameters.push(parameter);
+
             self.next_token();
             if self.cur_token.token_type != TokenType::Comma {
                 break;
@@ -943,6 +960,9 @@ hoge() {
 }
 
 Person createPerson(int age);
+
+int foo(int *as);
+int bar(int as[]);
 ";
         let expected = vec![
             (
@@ -977,13 +997,40 @@ Person createPerson(int age);
                 ],
                 None,
             ),
+            (
+                "int",
+                "foo",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Pointer(
+                            Box::new(ast::TypeRef::Named("int".to_string())),
+                        ),
+                        name: "as".to_string(),
+                    },
+                ],
+                None,
+            ),
+            (
+                "int",
+                "bar",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Array(
+                            Box::new(ast::TypeRef::Named("int".to_string())),
+                            None,
+                        ),
+                        name: "as".to_string(),
+                    },
+                ],
+                None,
+            ),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut external_items: Vec<ast::ExternalItem> = vec![];
-        let rows_count = 3;
+        let rows_count = 5;
         for _ in 0..rows_count {
             external_items.push(p.parse_external_item().unwrap());
             p.next_token();
