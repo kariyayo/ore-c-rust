@@ -22,7 +22,7 @@ impl TypeRef {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExternalItem {
     FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
-    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
+    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,7 +37,7 @@ pub enum Statement {
     Return { value: Option<Expression> },
     Break,
     Continue,
-    VarDecl { type_dec: TypeRef, declarators: Vec<Declarator> },
+    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
     Block { statements: Vec<Statement> },
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
@@ -119,20 +119,16 @@ impl Statement {
             },
             Statement::Break => "break;".to_string(),
             Statement::Continue => "continue;".to_string(),
-            Statement::VarDecl { type_dec, declarators } => {
-                let mut result = format!("{} ", type_dec.type_name());
-                for (i, decl) in declarators.iter().enumerate() {
-                    result.push_str(&decl.name);
-                    if let Some(value) = &decl.value {
-                        result.push_str(&format!(" = {};", value.to_string()));
-                    } else {
-                        result.push(';');
+            Statement::VarDecl { declarators } => {
+                let mut parts: Vec<String> = vec![];
+                for (type_ref, declarator) in declarators {
+                    let mut s = format!("{} {}", type_ref.type_name(), declarator.name);
+                    if let Some(value) = &declarator.value {
+                        s.push_str(&format!(" = {}", value.to_string()));
                     }
-                    if i < declarators.len() - 1 {
-                        result.push(' ');
-                    }
+                    parts.push(s);
                 }
-                result
+                format!("{};", parts.join(", "))
             },
             Statement::Block { statements } => {
                 let mut result = "{\n".to_string();

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::lexer::{self, token::TokenType};
+use crate::{lexer::{self, token::TokenType}, parser::ast::TypeRef};
 
 mod ast;
 use ast::{Declarator, Expression, Statement, SwitchBlock, SwitchLabel, SwitchLabelEntry};
@@ -170,11 +170,11 @@ impl Parser {
     }
 
     fn parse_external_vardecl(&mut self, type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
-        let declarators = self.parse_declarators()?;
+        let declarators = self.parse_declarators(type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)] });
         }
-        return Ok(ast::ExternalItem::VarDecl { type_dec, declarators });
+        return Ok(ast::ExternalItem::VarDecl { declarators });
     }
 
     fn parse_external_function(&mut self, return_type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
@@ -290,31 +290,44 @@ impl Parser {
     // <type_ref> <ident> = <expression>;
     // <type_ref> <ident>;
     // <type_ref> <ident>, <ident>, ...;
+    // <type_ref> * <ident>;
+    //
+    // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
-        while self.peek_token.token_type == TokenType::Asterisk {
-            self.next_token(); // cur_token is `*`
-            type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
-        }
+        let type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
         self.next_token();
-        let declarators: Vec<Declarator>= self.parse_declarators()?;
+        let declarators: Vec<(TypeRef, Declarator)>= self.parse_declarators(type_dec)?;
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(ast::Statement::VarDecl { type_dec, declarators });
+            return Ok(ast::Statement::VarDecl { declarators });
         } else {
             let error_msg = format!("[parse_vardecl_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
             return Err(Error { errors: vec![error_msg] });
         }
     }
 
-    fn parse_declarators(&mut self) -> Result<Vec<Declarator>> {
-        let mut declarators: Vec<Declarator>= vec![];
+    fn parse_declarators(&mut self, base_type_dec: TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
+        let base_type_name = match base_type_dec {
+            TypeRef::Named(name) => name,
+            _ => {
+                return Err(Error { errors: vec![format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)] });
+            }
+        };
+        let mut result: Vec<(TypeRef, Declarator)>= vec![];
         loop {
+            let mut type_dec = TypeRef::Named(base_type_name.clone());
+
+            // pointer?
+            while self.cur_token.token_type == TokenType::Asterisk {
+                type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
+                self.next_token();
+            }
+
             if self.cur_token.token_type != TokenType::Ident {
                 return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
             let name = self.cur_token.literal.clone();
 
-            let result = if self.peek_token.token_type != TokenType::Assign {
+            let declarator = if self.peek_token.token_type != TokenType::Assign {
                 ast::Declarator { name, value: None }
             } else {
                 self.next_token(); // cur_token is `=`
@@ -322,14 +335,15 @@ impl Parser {
                 let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
                 ast::Declarator { name, value: Some(value) }
             };
-            declarators.push(result);
+
+            result.push((type_dec, declarator));
             self.next_token();
             if self.cur_token.token_type != TokenType::Comma {
                 break;
             }
             self.next_token(); // `,` を読み飛ばす
         }
-        return Ok(declarators);
+        return Ok(result);
     }
 
     // { <statement>* }
@@ -834,8 +848,8 @@ int x, y, z;
         assert_eq!(external_items.len(), rows_count);
         for (i, item) in external_items.iter().enumerate() {
             match item {
-                ast::ExternalItem::VarDecl { type_dec, declarators } => {
-                    for (j, declarator) in declarators.iter().enumerate() {
+                ast::ExternalItem::VarDecl { declarators } => {
+                    for (j, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
@@ -950,8 +964,8 @@ int x, y, z;
         assert_eq!(statements.len(), rows_count);
         for (i, stmt) in statements.iter().enumerate() {
             match stmt {
-                ast::Statement::VarDecl { type_dec, declarators } => {
-                    for (j, declarator) in declarators.iter().enumerate() {
+                ast::Statement::VarDecl { declarators } => {
+                    for (j, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
@@ -1547,8 +1561,8 @@ int **b;
         assert_eq!(statements.len(), rows_count);
         for (i, stmt) in statements.iter().enumerate() {
             match stmt {
-                ast::Statement::VarDecl { type_dec, declarators } => {
-                    let declarator = declarators.first().unwrap();
+                ast::Statement::VarDecl { declarators } => {
+                    let (type_dec, declarator) = declarators.first().unwrap();
                     let (expected_type, expected_name, expected_value) = &expected[i];
                     assert_eq!(type_dec.type_name(), expected_type.to_string());
                     assert_eq!(declarator.name, *expected_name);
