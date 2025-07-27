@@ -56,6 +56,7 @@ pub enum TokenType {
     Break,
     Continue,
     Return,
+    Struct,
 }
 
 impl TokenType {
@@ -109,6 +110,7 @@ impl TokenType {
             TokenType::Do => "DO",
             TokenType::For => "FOR",
             TokenType::Continue => "CONTINUE",
+            TokenType::Struct => "STRUCT",
         }
     }
 }
@@ -130,6 +132,7 @@ pub fn lookup_ident(s: &str) -> TokenType {
         "return" => TokenType::Return,
         "break" => TokenType::Break,
         "continue" => TokenType::Continue,
+        "struct" => TokenType::Struct,
         _ => TokenType::Ident,
     }
 }

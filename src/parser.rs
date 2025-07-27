@@ -147,6 +147,9 @@ impl Parser {
 
     fn parse_external_item(&mut self) -> Result<ast::ExternalItem> {
         match self.cur_token.token_type {
+            TokenType::Struct => {
+                return self.parse_external_struct();
+            } ,
             TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Short | TokenType::Long | TokenType::Ident => {
                 // 関数宣言で、返り値の型を省略している場合を考慮する
                 let type_dec = if self.peek_token.token_type == TokenType::Lparem {
@@ -173,7 +176,7 @@ impl Parser {
     }
 
     fn parse_external_vardecl(&mut self, type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
-        let declarators = self.parse_declarators(type_dec)?;
+        let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)] });
         }
@@ -182,14 +185,14 @@ impl Parser {
 
     fn parse_external_function(&mut self, return_type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
         if self.cur_token.token_type != TokenType::Ident {
-            return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
         }
         let name = self.cur_token.literal.clone();
 
         self.next_token(); // cur_token is Lparam
         let parameters = self.parse_function_params()?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
         }
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
@@ -209,6 +212,73 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Rparem {
             return Ok(parameters);
         }
+        parameters = self.parse_type_decls(
+            TokenType::Comma,
+            TokenType::Rparem,
+            ast::Parameter::new,
+        )?;
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(parameters);
+    }
+
+    fn parse_external_struct(&mut self) -> Result<ast::ExternalItem> {
+        let struct_type = self.parse_struct()?;
+        self.next_token();
+        if self.cur_token.token_type != TokenType::Semicolon {
+            return Err(Error { errors: vec![format!("[parse_external_struct] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(ast::ExternalItem::Struct(struct_type));
+    }
+
+    fn parse_struct(&mut self) -> Result<ast::TypeRef> {
+        if self.cur_token.token_type != TokenType::Struct {
+            return Err(Error { errors: vec![format!("[parse_struct] expected next token to be Struct, got {:?}", self.peek_token.token_type)] });
+        }
+        self.next_token();
+
+        let mut tag_name: Option<String> = None;
+        if self.cur_token.token_type != TokenType::Lbrace {
+            tag_name = Some(self.cur_token.literal.clone());
+            self.next_token();
+        }
+
+        let members = if self.cur_token.token_type == TokenType::Lbrace {
+            // int x; int y; ...
+            self.parse_struct_decls()?
+        } else {
+            vec![]
+        };
+
+        return Ok(ast::TypeRef::Struct { tag_name, members });
+    }
+
+    fn parse_struct_decls(&mut self) -> Result<Vec<ast::StructDecl>> {
+        let mut decls: Vec<ast::StructDecl> = vec![];
+        if self.cur_token.token_type != TokenType::Lbrace {
+            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Lbrace, got {:?}", self.peek_token.token_type)] });
+        }
+        self.next_token();
+        if self.cur_token.token_type == TokenType::Rbrace {
+            return Ok(decls);
+        }
+        decls = self.parse_type_decls(
+            TokenType::Semicolon,
+            TokenType::Rbrace,
+            ast::StructDecl::new,
+        )?;
+        if self.cur_token.token_type != TokenType::Rbrace {
+            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(decls);
+    }
+
+    fn parse_type_decls<F, T>(&mut self, separator: TokenType, end_token: TokenType, f: F) -> Result<Vec<T>>
+    where
+        F: Fn((TypeRef, String)) -> T,
+    {
+        let mut result: Vec<T> = vec![];
         loop {
             let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
             self.next_token();
@@ -220,7 +290,7 @@ impl Parser {
             }
 
             if self.cur_token.token_type != TokenType::Ident {
-                return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+                return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
             let name = self.cur_token.literal.clone();
 
@@ -229,24 +299,24 @@ impl Parser {
                 self.next_token(); // cur_token is `[`
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Rbracket {
-                    return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+                    return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
                 }
                 type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
             }
 
-            let parameter = ast::Parameter { type_dec, name };
-            parameters.push(parameter);
+            result.push(f((type_dec, name)));
 
             self.next_token();
-            if self.cur_token.token_type != TokenType::Comma {
+            if self.cur_token.token_type != separator {
                 break;
             }
-            self.next_token(); // read `,`
+            if self.peek_token.token_type == end_token {
+                self.next_token();
+                break;
+            }
+            self.next_token(); // read separator
         }
-        if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
-        }
-        return Ok(parameters);
+        return Ok(result);
     }
 
     // 文をパースする
@@ -256,6 +326,9 @@ impl Parser {
                 self.parse_return_statement()
             }
             TokenType::Int => {
+                self.parse_vardecl_statement()
+            }
+            TokenType::Struct => {
                 self.parse_vardecl_statement()
             }
             TokenType::Lbrace => {
@@ -316,9 +389,18 @@ impl Parser {
     //
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
+        let type_dec = if self.cur_token.token_type == TokenType::Struct {
+            self.parse_struct()?
+        } else {
+            ast::TypeRef::Named(self.cur_token.literal.to_string())
+        };
         self.next_token();
-        let declarators: Vec<(TypeRef, Declarator)>= self.parse_declarators(type_dec)?;
+        let declarators: Vec<(TypeRef, Declarator)> =
+            if self.cur_token.token_type == TokenType::Semicolon {
+                vec![]
+            } else {
+                self.parse_declarators(&type_dec)?
+            };
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(ast::Statement::VarDecl { declarators });
         } else {
@@ -327,9 +409,10 @@ impl Parser {
         }
     }
 
-    fn parse_declarators(&mut self, base_type_dec: TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
+    fn parse_declarators(&mut self, base_type_dec: &TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
         let base_type_name = match base_type_dec {
-            TypeRef::Named(name) => name,
+            TypeRef::Named(name) => name.to_string(),
+            TypeRef::Struct{ tag_name: _, members: _ } => base_type_dec.type_name(),
             _ => {
                 return Err(Error { errors: vec![format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)] });
             }
@@ -1053,6 +1136,43 @@ int bar(int as[]);
     }
 
     #[test]
+    fn test_external_structdecl() {
+        // given
+        let input = "
+struct point {
+    int x;
+    int y;
+};
+";
+        let expected = vec![
+            ("struct", "int x; int y", Some("point")),
+        ];
+
+        // when
+        let l = lexer::Lexer::new(input);
+        let mut p = Parser::new(l);
+        let mut external_items: Vec<ast::ExternalItem> = vec![];
+        let rows_count = 1;
+        for _ in 0..rows_count {
+            external_items.push(p.parse_external_item().unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(external_items.len(), rows_count);
+        for (i, item) in external_items.iter().enumerate() {
+            match item {
+                ast::ExternalItem::Struct(ast::TypeRef::Struct { tag_name, members }) => {
+                    let (expected_type, expected_members, expected_tag_name) = &expected[i];
+                    assert_eq!(tag_name.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_tag_name.unwrap_or(""));
+                    assert_eq!(members.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("; "), expected_members.to_string());
+                }
+                _ => panic!("Statement is not Struct"),
+            }
+        }
+    }
+
+    #[test]
     fn test_vardecl() {
         // given
         let input = "
@@ -1060,19 +1180,25 @@ int five = 5;
 int x = 10;
 int x;
 int x, y, z;
+struct { int x; int y; } p;
+struct { int a; int b; } p, q;
+struct point z;
 ";
         let expected = vec![
             vec![("int", "five", Some("5".to_string()))],
             vec![("int", "x", Some("10".to_string()))],
             vec![("int", "x", None)],
             vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
+            vec![("struct {\n    int x;\n    int y;\n}", "p", None)],
+            vec![("struct {\n    int a;\n    int b;\n}", "p", None), ("struct {\n    int a;\n    int b;\n}", "q", None)],
+            vec![("struct point", "p", None)],
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 4;
+        let rows_count = 7;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();

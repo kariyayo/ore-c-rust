@@ -414,6 +414,7 @@ do {
 
 for (;;) ++a;
 [1, 2]
+struct a {};
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -569,6 +570,11 @@ for (;;) ++a;
             (TokenType::Comma, ","),
             (TokenType::Integer, "2"),
             (TokenType::Rbracket, "]"),
+            (TokenType::Struct, "struct"),
+            (TokenType::Ident, "a"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Semicolon, ";"),
         ];
 
         let mut l = Lexer::new(input);
