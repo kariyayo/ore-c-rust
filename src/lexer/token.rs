@@ -31,6 +31,7 @@ pub enum TokenType {
     Eq,
     NotEq,
     Dot,
+    Arrow,
 
     // 括弧
     Lparem,
@@ -90,6 +91,7 @@ impl TokenType {
             TokenType::Eq => "==",
             TokenType::NotEq => "!=",
             TokenType::Dot => ".",
+            TokenType::Arrow => "->",
             TokenType::Lparem => "(",
             TokenType::Rparem => ")",
             TokenType::Lbrace => "{",

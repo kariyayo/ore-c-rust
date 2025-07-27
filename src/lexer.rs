@@ -185,6 +185,15 @@ impl Lexer {
                         },
                         false,
                     )
+                } else if self.peek_char() == '>' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::Arrow,
+                            literal: "->".to_string(),
+                        },
+                        false,
+                    )
                 } else {
                     (
                         token::Token {
@@ -423,6 +432,7 @@ for (;;) ++a;
 [1, 2]
 struct a {};
 point.x;
+p->x;
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -585,6 +595,10 @@ point.x;
             (TokenType::Semicolon, ";"),
             (TokenType::Ident, "point"),
             (TokenType::Dot, "."),
+            (TokenType::Ident, "x"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Ident, "p"),
+            (TokenType::Arrow, "->"),
             (TokenType::Ident, "x"),
             (TokenType::Semicolon, ";"),
         ];
