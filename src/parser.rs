@@ -149,20 +149,34 @@ impl Parser {
     }
 
     fn parse_external_item(&mut self) -> Result<ast::ExternalItem> {
+        let mut struct_type_dec: Option<TypeRef> = None;
+        if self.cur_token.token_type == TokenType::Struct {
+            let struct_type = self.parse_struct_type()?;
+            if self.cur_token.token_type == TokenType::Semicolon {
+                return Ok(ast::ExternalItem::Struct(struct_type));
+            }
+            struct_type_dec = if self.cur_token.token_type == TokenType::Asterisk {
+                self.next_token();
+                Some(ast::TypeRef::Pointer(Box::new(struct_type)))
+            } else {
+                Some(struct_type)
+            };
+        }
+
         match self.cur_token.token_type {
-            TokenType::Struct => {
-                return self.parse_external_struct();
-            } ,
             TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Short | TokenType::Long | TokenType::Ident => {
-                // 関数宣言で、返り値の型を省略している場合を考慮する
-                let type_dec = if self.peek_token.token_type == TokenType::Lparem {
-                    // 省略されている場合は、int型とする
-                    ast::TypeRef::Named("int".to_string())
-                } else {
-                    let tmp = ast::TypeRef::Named(self.cur_token.literal.to_string());
-                    self.next_token();
-                    tmp
-                };
+                let type_dec = 
+                    struct_type_dec.unwrap_or_else(|| {
+                        // 関数宣言で、返り値の型を省略している場合を考慮する
+                        if self.peek_token.token_type == TokenType::Lparem {
+                            // 省略されている場合は、int型とする
+                            ast::TypeRef::Named("int".to_string())
+                        } else {
+                            let tmp = ast::TypeRef::Named(self.cur_token.literal.to_string());
+                            self.next_token();
+                            tmp
+                        }
+                    });
 
                 if self.peek_token.token_type == TokenType::Lparem {
                     // 関数
@@ -226,15 +240,7 @@ impl Parser {
         return Ok(parameters);
     }
 
-    fn parse_external_struct(&mut self) -> Result<ast::ExternalItem> {
-        let struct_type = self.parse_struct()?;
-        if self.cur_token.token_type != TokenType::Semicolon {
-            return Err(Error { errors: vec![format!("[parse_external_struct] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
-        }
-        return Ok(ast::ExternalItem::Struct(struct_type));
-    }
-
-    fn parse_struct(&mut self) -> Result<ast::TypeRef> {
+    fn parse_struct_type(&mut self) -> Result<ast::TypeRef> {
         if self.cur_token.token_type != TokenType::Struct {
             return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Struct, got {:?}", self.peek_token.token_type)] });
         }
@@ -285,8 +291,15 @@ impl Parser {
     {
         let mut result: Vec<T> = vec![];
         loop {
-            let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
-            self.next_token();
+            // struct?
+            let mut type_dec =
+                if self.cur_token.token_type == TokenType::Struct {
+                    self.parse_struct_type()?
+                } else {
+                    let t = ast::TypeRef::Named(self.cur_token.literal.clone());
+                    self.next_token();
+                    t
+                };
 
             // pointer?
             while self.cur_token.token_type == TokenType::Asterisk {
@@ -395,7 +408,7 @@ impl Parser {
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
         let type_dec = if self.cur_token.token_type == TokenType::Struct {
-            self.parse_struct()?
+            self.parse_struct_type()?
         } else {
             let t = ast::TypeRef::Named(self.cur_token.literal.to_string());
             self.next_token();
@@ -1048,10 +1061,11 @@ int add(int a, int b) {
 hoge() {
 }
 
-Person createPerson(int age);
-
 int foo(int *as);
 int bar(int as[]);
+
+struct point addpoint(struct point p, struct point q);
+struct point* movepoint(struct point* p, int x, int y);
 ";
         let expected = vec![
             (
@@ -1074,17 +1088,6 @@ int bar(int as[]);
                 "hoge",
                 vec![],
                 Some("{\n}".to_string()),
-            ),
-            (
-                "Person",
-                "createPerson",
-                vec![
-                    ast::Parameter {
-                        type_dec: ast::TypeRef::Named("int".to_string()),
-                        name: "age".to_string(),
-                    },
-                ],
-                None,
             ),
             (
                 "int",
@@ -1113,13 +1116,47 @@ int bar(int as[]);
                 ],
                 None,
             ),
+            (
+                "struct point",
+                "addpoint",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        name: "p".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        name: "q".to_string(),
+                    },
+                ],
+                None,
+            ),
+            (
+                "struct point*",
+                "movepoint",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Pointer(Box::new(ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], })),
+                        name: "p".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Named("int".to_string()),
+                        name: "x".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Named("int".to_string()),
+                        name: "y".to_string(),
+                    }
+                ],
+                None,
+            ),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut external_items: Vec<ast::ExternalItem> = vec![];
-        let rows_count = 5;
+        let rows_count = 6;
         for _ in 0..rows_count {
             external_items.push(p.parse_external_item().unwrap());
             p.next_token();
