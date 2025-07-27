@@ -1187,16 +1187,21 @@ struct point {
     int x;
     int y;
 };
+struct key {
+    char *word;
+    int count;
+};
 ";
         let expected = vec![
             ("struct", "int x; int y", Some("point")),
+            ("struct", "char* word; int count", Some("key")),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut external_items: Vec<ast::ExternalItem> = vec![];
-        let rows_count = 1;
+        let rows_count = 2;
         for _ in 0..rows_count {
             external_items.push(p.parse_external_item().unwrap());
             p.next_token();
@@ -1847,6 +1852,11 @@ int c[] = { 1, 2 };
 int d[][4] = { {1, 2, 3, 4}, {1, 2, 3, 4} };
 int e[] = {};
 int f[] = {1, 2, };
+struct key {
+    char *word;
+    int count;
+} keytab[3];
+struct key keytab[3];
 ";
         let expected = vec![
             ("int*", "five", None),
@@ -1858,13 +1868,15 @@ int f[] = {1, 2, };
             ("int[][4]", "d", Some("{{1, 2, 3, 4}, {1, 2, 3, 4}}")),
             ("int[]", "e", Some("{}")),
             ("int[]", "f", Some("{1, 2}")),
+            ("struct key {\n    char* word;\n    int count;\n}[3]", "keytab", None),
+            ("struct key[3]", "keytab", None),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 9;
+        let rows_count = 11;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
