@@ -41,6 +41,7 @@ enum ExpressionPrecedence {
     Product, // *
     Prefix, // -X, !X, ++X, --X
     Postfix, // X++, X--
+    Dot, // point.x
     Call, // myFunction(X)
     Index,
 }
@@ -63,7 +64,8 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
         | TokenType::SlashAssign
         | TokenType::PercentAssign
         | TokenType::Lparem
-        | TokenType::Lbracket => {
+        | TokenType::Lbracket
+        | TokenType::Dot => {
             true
         }
         _ => {
@@ -103,6 +105,7 @@ impl Parser {
         precedences.insert(TokenType::Decrement, ExpressionPrecedence::Postfix);
         precedences.insert(TokenType::Lparem, ExpressionPrecedence::Call);
         precedences.insert(TokenType::Lbracket, ExpressionPrecedence::Index);
+        precedences.insert(TokenType::Dot, ExpressionPrecedence::Dot);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -1490,6 +1493,11 @@ a--;
             ("a[1] + 3;", "((a[1]) + 3);"),
             ("&a[0];", "(&(a[0]));"),
             ("a[x + i];", "(a[(x + i)]);"),
+            ("x.number + i;", "((x . number) + i);"),
+            ("i + x.number;", "(i + (x . number));"),
+            ("++i.number;", "(++(i . number));"),
+            ("a[x.number];", "(a[(x . number)]);"),
+            ("screen.point.x;", "((screen . point) . x);"),
         ];
         for (input, expected) in tests.iter() {
             // when

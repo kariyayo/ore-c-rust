@@ -318,6 +318,13 @@ impl Lexer {
                 },
                 false,
             ),
+            '.' => (
+                token::Token {
+                    token_type: TokenType::Dot,
+                    literal: self.ch.to_string(),
+                },
+                false,
+            ),
             '\u{0}' => (
                 token::Token {
                     token_type: TokenType::Eof,
@@ -415,6 +422,7 @@ do {
 for (;;) ++a;
 [1, 2]
 struct a {};
+point.x;
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -574,6 +582,10 @@ struct a {};
             (TokenType::Ident, "a"),
             (TokenType::Lbrace, "{"),
             (TokenType::Rbrace, "}"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Ident, "point"),
+            (TokenType::Dot, "."),
+            (TokenType::Ident, "x"),
             (TokenType::Semicolon, ";"),
         ];
 

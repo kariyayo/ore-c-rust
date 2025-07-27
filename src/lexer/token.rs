@@ -30,6 +30,7 @@ pub enum TokenType {
     Gt,
     Eq,
     NotEq,
+    Dot,
 
     // 括弧
     Lparem,
@@ -88,6 +89,7 @@ impl TokenType {
             TokenType::Gt => ">",
             TokenType::Eq => "==",
             TokenType::NotEq => "!=",
+            TokenType::Dot => ".",
             TokenType::Lparem => "(",
             TokenType::Rparem => ")",
             TokenType::Lbrace => "{",
