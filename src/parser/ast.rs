@@ -1,3 +1,5 @@
+use std::fmt;
+
 
 pub struct Program {
     pub external_items: Vec<ExternalItem>,
@@ -8,6 +10,7 @@ pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
     Array(Box<TypeRef>, Option<u32>), // 配列型（例: int[10]）
+    Struct{ tag_name: Option<String>, members: Vec<StructDecl> }, // 構造体
 }
 
 impl TypeRef {
@@ -16,7 +19,35 @@ impl TypeRef {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
             TypeRef::Array(type_ref, size) => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
+            TypeRef::Struct { tag_name, members } => {
+                if members.len() == 0 {
+                    format!( "struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
+                } else {
+                    let members_string = members.iter()
+                        .map(|StructDecl{ type_dec, name }| type_dec.type_name() + " " + name)
+                        .fold("\n".to_string(), |acc, x| acc + &format!("    {};\n", x));
+                    format!( "struct {}{{{}}}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string() + " "), members_string)
+                }
+            }
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct StructDecl {
+    pub type_dec: TypeRef,
+    pub name: String,
+}
+
+impl StructDecl {
+    pub fn new(p: (TypeRef, String)) -> StructDecl {
+        return StructDecl { type_dec: p.0, name: p.1 };
+    }
+}
+
+impl fmt::Display for StructDecl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        return write!(f, "{} {}", self.type_dec.type_name(), self.name);
     }
 }
 
@@ -24,6 +55,7 @@ impl TypeRef {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExternalItem {
     FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
+    Struct(TypeRef),
     VarDecl { declarators: Vec<(TypeRef, Declarator)> },
 }
 
@@ -31,6 +63,12 @@ pub enum ExternalItem {
 pub struct Parameter {
     pub type_dec: TypeRef,
     pub name: String,
+}
+
+impl Parameter {
+    pub fn new(p: (TypeRef, String)) -> Parameter {
+        return Parameter { type_dec: p.0, name: p.1 };
+    }
 }
 
 /// 文を表すノード
@@ -108,7 +146,7 @@ pub enum Expression {
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
     PostfixExpression { operator: String, left: Box<Expression> },
     FunctionCallExpression { function_name: String, arguments: Vec<Expression> },
-    ArrayInitializerExpression { elements: Vec<Expression> },
+    InitializerExpression { elements: Vec<Expression> },
     IndexExpression { left: Box<Expression>, index: Box<Expression> },
 }
 
@@ -218,7 +256,7 @@ impl Expression {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.to_string()).collect();
                 format!("{}({})", function_name, args.join(", "))
             },
-            Expression::ArrayInitializerExpression { elements } => {
+            Expression::InitializerExpression { elements } => {
                 let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
                 format!("{{{}}}", args.join(", "))
             },

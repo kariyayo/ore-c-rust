@@ -30,6 +30,8 @@ pub enum TokenType {
     Gt,
     Eq,
     NotEq,
+    Dot,
+    Arrow,
 
     // 括弧
     Lparem,
@@ -56,6 +58,7 @@ pub enum TokenType {
     Break,
     Continue,
     Return,
+    Struct,
 }
 
 impl TokenType {
@@ -87,6 +90,8 @@ impl TokenType {
             TokenType::Gt => ">",
             TokenType::Eq => "==",
             TokenType::NotEq => "!=",
+            TokenType::Dot => ".",
+            TokenType::Arrow => "->",
             TokenType::Lparem => "(",
             TokenType::Rparem => ")",
             TokenType::Lbrace => "{",
@@ -109,6 +114,7 @@ impl TokenType {
             TokenType::Do => "DO",
             TokenType::For => "FOR",
             TokenType::Continue => "CONTINUE",
+            TokenType::Struct => "STRUCT",
         }
     }
 }
@@ -130,6 +136,7 @@ pub fn lookup_ident(s: &str) -> TokenType {
         "return" => TokenType::Return,
         "break" => TokenType::Break,
         "continue" => TokenType::Continue,
+        "struct" => TokenType::Struct,
         _ => TokenType::Ident,
     }
 }

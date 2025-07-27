@@ -185,6 +185,15 @@ impl Lexer {
                         },
                         false,
                     )
+                } else if self.peek_char() == '>' {
+                    self.read_char();
+                    (
+                        token::Token {
+                            token_type: TokenType::Arrow,
+                            literal: "->".to_string(),
+                        },
+                        false,
+                    )
                 } else {
                     (
                         token::Token {
@@ -318,6 +327,13 @@ impl Lexer {
                 },
                 false,
             ),
+            '.' => (
+                token::Token {
+                    token_type: TokenType::Dot,
+                    literal: self.ch.to_string(),
+                },
+                false,
+            ),
             '\u{0}' => (
                 token::Token {
                     token_type: TokenType::Eof,
@@ -414,6 +430,9 @@ do {
 
 for (;;) ++a;
 [1, 2]
+struct a {};
+point.x;
+p->x;
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -569,6 +588,19 @@ for (;;) ++a;
             (TokenType::Comma, ","),
             (TokenType::Integer, "2"),
             (TokenType::Rbracket, "]"),
+            (TokenType::Struct, "struct"),
+            (TokenType::Ident, "a"),
+            (TokenType::Lbrace, "{"),
+            (TokenType::Rbrace, "}"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Ident, "point"),
+            (TokenType::Dot, "."),
+            (TokenType::Ident, "x"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Ident, "p"),
+            (TokenType::Arrow, "->"),
+            (TokenType::Ident, "x"),
+            (TokenType::Semicolon, ";"),
         ];
 
         let mut l = Lexer::new(input);

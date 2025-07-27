@@ -63,7 +63,9 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
         | TokenType::SlashAssign
         | TokenType::PercentAssign
         | TokenType::Lparem
-        | TokenType::Lbracket => {
+        | TokenType::Lbracket
+        | TokenType::Dot
+        | TokenType::Arrow => {
             true
         }
         _ => {
@@ -103,6 +105,8 @@ impl Parser {
         precedences.insert(TokenType::Decrement, ExpressionPrecedence::Postfix);
         precedences.insert(TokenType::Lparem, ExpressionPrecedence::Call);
         precedences.insert(TokenType::Lbracket, ExpressionPrecedence::Index);
+        precedences.insert(TokenType::Dot, ExpressionPrecedence::Call);
+        precedences.insert(TokenType::Arrow, ExpressionPrecedence::Call);
         let mut p = Parser {
             l: l,
             cur_token: lexer::token::Token { token_type: TokenType::Eof, literal: "".to_string() },
@@ -146,17 +150,34 @@ impl Parser {
     }
 
     fn parse_external_item(&mut self) -> Result<ast::ExternalItem> {
+        let mut struct_type_dec: Option<TypeRef> = None;
+        if self.cur_token.token_type == TokenType::Struct {
+            let struct_type = self.parse_struct_type()?;
+            if self.cur_token.token_type == TokenType::Semicolon {
+                return Ok(ast::ExternalItem::Struct(struct_type));
+            }
+            struct_type_dec = if self.cur_token.token_type == TokenType::Asterisk {
+                self.next_token();
+                Some(ast::TypeRef::Pointer(Box::new(struct_type)))
+            } else {
+                Some(struct_type)
+            };
+        }
+
         match self.cur_token.token_type {
             TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Short | TokenType::Long | TokenType::Ident => {
-                // 関数宣言で、返り値の型を省略している場合を考慮する
-                let type_dec = if self.peek_token.token_type == TokenType::Lparem {
-                    // 省略されている場合は、int型とする
-                    ast::TypeRef::Named("int".to_string())
-                } else {
-                    let tmp = ast::TypeRef::Named(self.cur_token.literal.to_string());
-                    self.next_token();
-                    tmp
-                };
+                let type_dec = 
+                    struct_type_dec.unwrap_or_else(|| {
+                        // 関数宣言で、返り値の型を省略している場合を考慮する
+                        if self.peek_token.token_type == TokenType::Lparem {
+                            // 省略されている場合は、int型とする
+                            ast::TypeRef::Named("int".to_string())
+                        } else {
+                            let tmp = ast::TypeRef::Named(self.cur_token.literal.to_string());
+                            self.next_token();
+                            tmp
+                        }
+                    });
 
                 if self.peek_token.token_type == TokenType::Lparem {
                     // 関数
@@ -173,7 +194,7 @@ impl Parser {
     }
 
     fn parse_external_vardecl(&mut self, type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
-        let declarators = self.parse_declarators(type_dec)?;
+        let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)] });
         }
@@ -182,14 +203,14 @@ impl Parser {
 
     fn parse_external_function(&mut self, return_type_dec: ast::TypeRef) -> Result<ast::ExternalItem> {
         if self.cur_token.token_type != TokenType::Ident {
-            return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
         }
         let name = self.cur_token.literal.clone();
 
         self.next_token(); // cur_token is Lparam
         let parameters = self.parse_function_params()?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
         }
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
@@ -209,9 +230,77 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Rparem {
             return Ok(parameters);
         }
-        loop {
-            let mut type_dec = ast::TypeRef::Named(self.cur_token.literal.clone());
+        parameters = self.parse_type_decls(
+            TokenType::Comma,
+            TokenType::Rparem,
+            ast::Parameter::new,
+        )?;
+        if self.cur_token.token_type != TokenType::Rparem {
+            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(parameters);
+    }
+
+    fn parse_struct_type(&mut self) -> Result<ast::TypeRef> {
+        if self.cur_token.token_type != TokenType::Struct {
+            return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Struct, got {:?}", self.peek_token.token_type)] });
+        }
+        self.next_token();
+
+        let mut tag_name: Option<String> = None;
+        if self.cur_token.token_type != TokenType::Lbrace {
+            tag_name = Some(self.cur_token.literal.clone());
             self.next_token();
+        }
+
+        let mut members: Vec<ast::StructDecl> = vec![];
+        if self.cur_token.token_type == TokenType::Lbrace {
+            // int x; int y; ...
+            members = self.parse_struct_decls()?;
+            if self.cur_token.token_type != TokenType::Rbrace {
+                return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            }
+            self.next_token();
+        }
+
+        return Ok(ast::TypeRef::Struct { tag_name, members });
+    }
+
+    fn parse_struct_decls(&mut self) -> Result<Vec<ast::StructDecl>> {
+        let mut decls: Vec<ast::StructDecl> = vec![];
+        if self.cur_token.token_type != TokenType::Lbrace {
+            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Lbrace, got {:?}", self.peek_token.token_type)] });
+        }
+        self.next_token();
+        if self.cur_token.token_type == TokenType::Rbrace {
+            return Ok(decls);
+        }
+        decls = self.parse_type_decls(
+            TokenType::Semicolon,
+            TokenType::Rbrace,
+            ast::StructDecl::new,
+        )?;
+        if self.cur_token.token_type != TokenType::Rbrace {
+            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+        }
+        return Ok(decls);
+    }
+
+    fn parse_type_decls<F, T>(&mut self, separator: TokenType, end_token: TokenType, f: F) -> Result<Vec<T>>
+    where
+        F: Fn((TypeRef, String)) -> T,
+    {
+        let mut result: Vec<T> = vec![];
+        loop {
+            // struct?
+            let mut type_dec =
+                if self.cur_token.token_type == TokenType::Struct {
+                    self.parse_struct_type()?
+                } else {
+                    let t = ast::TypeRef::Named(self.cur_token.literal.clone());
+                    self.next_token();
+                    t
+                };
 
             // pointer?
             while self.cur_token.token_type == TokenType::Asterisk {
@@ -220,7 +309,7 @@ impl Parser {
             }
 
             if self.cur_token.token_type != TokenType::Ident {
-                return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+                return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
             let name = self.cur_token.literal.clone();
 
@@ -229,24 +318,24 @@ impl Parser {
                 self.next_token(); // cur_token is `[`
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Rbracket {
-                    return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+                    return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
                 }
                 type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
             }
 
-            let parameter = ast::Parameter { type_dec, name };
-            parameters.push(parameter);
+            result.push(f((type_dec, name)));
 
             self.next_token();
-            if self.cur_token.token_type != TokenType::Comma {
+            if self.cur_token.token_type != separator {
                 break;
             }
-            self.next_token(); // read `,`
+            if self.peek_token.token_type == end_token {
+                self.next_token();
+                break;
+            }
+            self.next_token(); // read separator
         }
-        if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
-        }
-        return Ok(parameters);
+        return Ok(result);
     }
 
     // 文をパースする
@@ -256,6 +345,9 @@ impl Parser {
                 self.parse_return_statement()
             }
             TokenType::Int => {
+                self.parse_vardecl_statement()
+            }
+            TokenType::Struct => {
                 self.parse_vardecl_statement()
             }
             TokenType::Lbrace => {
@@ -316,9 +408,19 @@ impl Parser {
     //
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<ast::Statement> {
-        let type_dec = ast::TypeRef::Named(self.cur_token.literal.to_string());
-        self.next_token();
-        let declarators: Vec<(TypeRef, Declarator)>= self.parse_declarators(type_dec)?;
+        let type_dec = if self.cur_token.token_type == TokenType::Struct {
+            self.parse_struct_type()?
+        } else {
+            let t = ast::TypeRef::Named(self.cur_token.literal.to_string());
+            self.next_token();
+            t
+        };
+        let declarators: Vec<(TypeRef, Declarator)> =
+            if self.cur_token.token_type == TokenType::Semicolon {
+                vec![]
+            } else {
+                self.parse_declarators(&type_dec)?
+            };
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(ast::Statement::VarDecl { declarators });
         } else {
@@ -327,9 +429,10 @@ impl Parser {
         }
     }
 
-    fn parse_declarators(&mut self, base_type_dec: TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
+    fn parse_declarators(&mut self, base_type_dec: &TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
         let base_type_name = match base_type_dec {
-            TypeRef::Named(name) => name,
+            TypeRef::Named(name) => name.to_string(),
+            TypeRef::Struct{ tag_name: _, members: _ } => base_type_dec.type_name(),
             _ => {
                 return Err(Error { errors: vec![format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)] });
             }
@@ -765,7 +868,7 @@ impl Parser {
                 Some(self.parse_grouped_expression())
             }
             TokenType::Lbrace => {
-                Some(self.parse_array_initializer_expression())
+                Some(self.parse_initializer_expression())
             }
             _ => {
                 None
@@ -794,11 +897,11 @@ impl Parser {
         return exp;
     }
 
-    fn parse_array_initializer_expression(&mut self) -> Result<ast::Expression> {
+    fn parse_initializer_expression(&mut self) -> Result<ast::Expression> {
         self.next_token();
         let mut elements: Vec<ast::Expression> = vec![];
         if self.cur_token.token_type == TokenType::Rbrace {
-            return Ok(ast::Expression::ArrayInitializerExpression { elements });
+            return Ok(ast::Expression::InitializerExpression { elements });
         }
         while self.cur_token.token_type != TokenType::Rbrace {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
@@ -810,9 +913,9 @@ impl Parser {
             self.next_token(); // `,` を読み飛ばす
         }
         if self.cur_token.token_type != TokenType::Rbrace {
-            return Err(Error { errors: vec![format!("[parse_array_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
         }
-        return Ok(ast::Expression::ArrayInitializerExpression { elements });
+        return Ok(ast::Expression::InitializerExpression { elements });
     }
 
     // !, -, ++, --, *, & の前置演算子をパースする
@@ -959,10 +1062,11 @@ int add(int a, int b) {
 hoge() {
 }
 
-Person createPerson(int age);
-
 int foo(int *as);
 int bar(int as[]);
+
+struct point addpoint(struct point p, struct point q);
+struct point* movepoint(struct point* p, int x, int y);
 ";
         let expected = vec![
             (
@@ -985,17 +1089,6 @@ int bar(int as[]);
                 "hoge",
                 vec![],
                 Some("{\n}".to_string()),
-            ),
-            (
-                "Person",
-                "createPerson",
-                vec![
-                    ast::Parameter {
-                        type_dec: ast::TypeRef::Named("int".to_string()),
-                        name: "age".to_string(),
-                    },
-                ],
-                None,
             ),
             (
                 "int",
@@ -1024,13 +1117,47 @@ int bar(int as[]);
                 ],
                 None,
             ),
+            (
+                "struct point",
+                "addpoint",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        name: "p".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        name: "q".to_string(),
+                    },
+                ],
+                None,
+            ),
+            (
+                "struct point*",
+                "movepoint",
+                vec![
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Pointer(Box::new(ast::TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], })),
+                        name: "p".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Named("int".to_string()),
+                        name: "x".to_string(),
+                    },
+                    ast::Parameter {
+                        type_dec: ast::TypeRef::Named("int".to_string()),
+                        name: "y".to_string(),
+                    }
+                ],
+                None,
+            ),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut external_items: Vec<ast::ExternalItem> = vec![];
-        let rows_count = 5;
+        let rows_count = 6;
         for _ in 0..rows_count {
             external_items.push(p.parse_external_item().unwrap());
             p.next_token();
@@ -1053,6 +1180,48 @@ int bar(int as[]);
     }
 
     #[test]
+    fn test_external_structdecl() {
+        // given
+        let input = "
+struct point {
+    int x;
+    int y;
+};
+struct key {
+    char *word;
+    int count;
+};
+";
+        let expected = vec![
+            ("struct", "int x; int y", Some("point")),
+            ("struct", "char* word; int count", Some("key")),
+        ];
+
+        // when
+        let l = lexer::Lexer::new(input);
+        let mut p = Parser::new(l);
+        let mut external_items: Vec<ast::ExternalItem> = vec![];
+        let rows_count = 2;
+        for _ in 0..rows_count {
+            external_items.push(p.parse_external_item().unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(external_items.len(), rows_count);
+        for (i, item) in external_items.iter().enumerate() {
+            match item {
+                ast::ExternalItem::Struct(ast::TypeRef::Struct { tag_name, members }) => {
+                    let (expected_type, expected_members, expected_tag_name) = &expected[i];
+                    assert_eq!(tag_name.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_tag_name.unwrap_or(""));
+                    assert_eq!(members.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("; "), expected_members.to_string());
+                }
+                _ => panic!("Statement is not Struct"),
+            }
+        }
+    }
+
+    #[test]
     fn test_vardecl() {
         // given
         let input = "
@@ -1060,19 +1229,29 @@ int five = 5;
 int x = 10;
 int x;
 int x, y, z;
+struct { int x; int y; } p;
+struct { int a; int b; } p, q;
+struct point z;
+struct { int x; int y; } p = { 10, 20 };
+struct User a = { 1, 2 };
 ";
         let expected = vec![
-            vec![("int", "five", Some("5".to_string()))],
-            vec![("int", "x", Some("10".to_string()))],
+            vec![("int", "five", Some("5"))],
+            vec![("int", "x", Some("10"))],
             vec![("int", "x", None)],
             vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
+            vec![("struct {\n    int x;\n    int y;\n}", "p", None)],
+            vec![("struct {\n    int a;\n    int b;\n}", "p", None), ("struct {\n    int a;\n    int b;\n}", "q", None)],
+            vec![("struct point", "z", None)],
+            vec![("struct {\n    int x;\n    int y;\n}", "p", Some("{10, 20}"))],
+            vec![("struct User", "a", Some("{1, 2}"))],
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 4;
+        let rows_count = 9;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
@@ -1087,7 +1266,7 @@ int x, y, z;
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
-                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x| x.to_string()));
                     }
                 }
                 _ => panic!("Statement is not VarDecl"),
@@ -1357,6 +1536,12 @@ a--;
             ("a[1] + 3;", "((a[1]) + 3);"),
             ("&a[0];", "(&(a[0]));"),
             ("a[x + i];", "(a[(x + i)]);"),
+            ("x.number + i;", "((x . number) + i);"),
+            ("i + x.number;", "(i + (x . number));"),
+            ("++i.number;", "(++(i . number));"),
+            ("a[x.number];", "(a[(x . number)]);"),
+            ("screen.point.x;", "((screen . point) . x);"),
+            ("++i->number;", "(++(i -> number));"),
         ];
         for (input, expected) in tests.iter() {
             // when
@@ -1667,6 +1852,11 @@ int c[] = { 1, 2 };
 int d[][4] = { {1, 2, 3, 4}, {1, 2, 3, 4} };
 int e[] = {};
 int f[] = {1, 2, };
+struct key {
+    char *word;
+    int count;
+} keytab[3];
+struct key keytab[3];
 ";
         let expected = vec![
             ("int*", "five", None),
@@ -1678,13 +1868,15 @@ int f[] = {1, 2, };
             ("int[][4]", "d", Some("{{1, 2, 3, 4}, {1, 2, 3, 4}}")),
             ("int[]", "e", Some("{}")),
             ("int[]", "f", Some("{1, 2}")),
+            ("struct key {\n    char* word;\n    int count;\n}[3]", "keytab", None),
+            ("struct key[3]", "keytab", None),
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 9;
+        let rows_count = 11;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
