@@ -225,7 +225,6 @@ impl Parser {
 
     fn parse_external_struct(&mut self) -> Result<ast::ExternalItem> {
         let struct_type = self.parse_struct()?;
-        self.next_token();
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(Error { errors: vec![format!("[parse_external_struct] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
         }
@@ -234,7 +233,7 @@ impl Parser {
 
     fn parse_struct(&mut self) -> Result<ast::TypeRef> {
         if self.cur_token.token_type != TokenType::Struct {
-            return Err(Error { errors: vec![format!("[parse_struct] expected next token to be Struct, got {:?}", self.peek_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Struct, got {:?}", self.peek_token.token_type)] });
         }
         self.next_token();
 
@@ -244,12 +243,15 @@ impl Parser {
             self.next_token();
         }
 
-        let members = if self.cur_token.token_type == TokenType::Lbrace {
+        let mut members: Vec<ast::StructDecl> = vec![];
+        if self.cur_token.token_type == TokenType::Lbrace {
             // int x; int y; ...
-            self.parse_struct_decls()?
-        } else {
-            vec![]
-        };
+            members = self.parse_struct_decls()?;
+            if self.cur_token.token_type != TokenType::Rbrace {
+                return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            }
+            self.next_token();
+        }
 
         return Ok(ast::TypeRef::Struct { tag_name, members });
     }
@@ -392,9 +394,10 @@ impl Parser {
         let type_dec = if self.cur_token.token_type == TokenType::Struct {
             self.parse_struct()?
         } else {
-            ast::TypeRef::Named(self.cur_token.literal.to_string())
+            let t = ast::TypeRef::Named(self.cur_token.literal.to_string());
+            self.next_token();
+            t
         };
-        self.next_token();
         let declarators: Vec<(TypeRef, Declarator)> =
             if self.cur_token.token_type == TokenType::Semicolon {
                 vec![]
@@ -848,7 +851,7 @@ impl Parser {
                 Some(self.parse_grouped_expression())
             }
             TokenType::Lbrace => {
-                Some(self.parse_array_initializer_expression())
+                Some(self.parse_initializer_expression())
             }
             _ => {
                 None
@@ -877,11 +880,11 @@ impl Parser {
         return exp;
     }
 
-    fn parse_array_initializer_expression(&mut self) -> Result<ast::Expression> {
+    fn parse_initializer_expression(&mut self) -> Result<ast::Expression> {
         self.next_token();
         let mut elements: Vec<ast::Expression> = vec![];
         if self.cur_token.token_type == TokenType::Rbrace {
-            return Ok(ast::Expression::ArrayInitializerExpression { elements });
+            return Ok(ast::Expression::InitializerExpression { elements });
         }
         while self.cur_token.token_type != TokenType::Rbrace {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
@@ -893,9 +896,9 @@ impl Parser {
             self.next_token(); // `,` を読み飛ばす
         }
         if self.cur_token.token_type != TokenType::Rbrace {
-            return Err(Error { errors: vec![format!("[parse_array_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            return Err(Error { errors: vec![format!("[parse_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
         }
-        return Ok(ast::Expression::ArrayInitializerExpression { elements });
+        return Ok(ast::Expression::InitializerExpression { elements });
     }
 
     // !, -, ++, --, *, & の前置演算子をパースする
@@ -1183,22 +1186,26 @@ int x, y, z;
 struct { int x; int y; } p;
 struct { int a; int b; } p, q;
 struct point z;
+struct { int x; int y; } p = { 10, 20 };
+struct User a = { 1, 2 };
 ";
         let expected = vec![
-            vec![("int", "five", Some("5".to_string()))],
-            vec![("int", "x", Some("10".to_string()))],
+            vec![("int", "five", Some("5"))],
+            vec![("int", "x", Some("10"))],
             vec![("int", "x", None)],
             vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
             vec![("struct {\n    int x;\n    int y;\n}", "p", None)],
             vec![("struct {\n    int a;\n    int b;\n}", "p", None), ("struct {\n    int a;\n    int b;\n}", "q", None)],
-            vec![("struct point", "p", None)],
+            vec![("struct point", "z", None)],
+            vec![("struct {\n    int x;\n    int y;\n}", "p", Some("{10, 20}"))],
+            vec![("struct User", "a", Some("{1, 2}"))],
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 7;
+        let rows_count = 9;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
@@ -1213,7 +1220,7 @@ struct point z;
                         let (expected_type, expected_name, expected_value) = &expected[i][j];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
-                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x| x.to_string()));
                     }
                 }
                 _ => panic!("Statement is not VarDecl"),
