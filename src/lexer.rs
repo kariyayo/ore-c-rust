@@ -47,7 +47,7 @@ impl Lexer {
 
     fn read_identifier(&mut self) -> String {
         let start_pos = self.position;
-        while self.is_letter(self.ch) {
+        while self.is_letter(self.ch) || self.is_digit(self.ch) {
             self.read_char();
         }
         return self.input[start_pos..self.position].to_string();
@@ -399,7 +399,7 @@ int main(int argc, char *argv[]) {
 10 == 10;
 10 != 9;
 
-++a
+++a1
 
 !-/*%&5
 
@@ -494,7 +494,7 @@ p->x;
             (TokenType::Integer, "9"),
             (TokenType::Semicolon, ";"),
             (TokenType::Increment, "++"),
-            (TokenType::Ident, "a"),
+            (TokenType::Ident, "a1"),
             (TokenType::Bang, "!"),
             (TokenType::Minus, "-"),
             (TokenType::Slash, "/"),
