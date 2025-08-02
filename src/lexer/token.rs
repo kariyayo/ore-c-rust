@@ -9,6 +9,8 @@ pub enum TokenType {
 
     Ident,
     Integer,
+    Character,
+    String,
 
     // 演算子
     Assign,
@@ -71,6 +73,8 @@ impl TokenType {
             TokenType::Colon => ":",
             TokenType::Ident => "IDENT",
             TokenType::Integer => "INTEGER",
+            TokenType::Character => "CHARACTER",
+            TokenType::String => "STRING",
             TokenType::Assign => "=",
             TokenType::PlusAssign => "+=",
             TokenType::MinusAssign => "-=",

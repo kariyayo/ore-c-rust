@@ -344,10 +344,7 @@ impl Parser {
             TokenType::Return => {
                 self.parse_return_statement()
             }
-            TokenType::Int => {
-                self.parse_vardecl_statement()
-            }
-            TokenType::Struct => {
+            TokenType::Int | TokenType::Char | TokenType::Struct => {
                 self.parse_vardecl_statement()
             }
             TokenType::Lbrace => {
@@ -856,6 +853,12 @@ impl Parser {
             TokenType::Integer => {
                 Some(self.parse_integer_literal())
             }
+            TokenType::Character => {
+                Some(self.parse_character_literal())
+            }
+            TokenType::String => {
+                Some(self.parse_string_literal())
+            }
             TokenType::Bang
             | TokenType::Minus
             | TokenType::Increment
@@ -885,6 +888,18 @@ impl Parser {
         return self.cur_token.literal.parse()
             .map(|value| ast::Expression::Int { value })
             .map_err(|_| Error { errors: vec!["[parse_integer_literal] parse int error".to_string()] });
+    }
+
+    fn parse_character_literal(&self) -> Result<ast::Expression> {
+        return self.cur_token.literal.parse()
+            .map(|value| ast::Expression::CharacterLiteral { value })
+            .map_err(|_| Error { errors: vec![format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()] });
+    }
+
+    fn parse_string_literal(&self) -> Result<ast::Expression> {
+        return self.cur_token.literal.parse()
+            .map(|value| ast::Expression::StringLiteral { value })
+            .map_err(|_| Error { errors: vec!["[parse_string_literal] parse string error".to_string()] });
     }
 
     fn parse_grouped_expression(&mut self) -> Result<ast::Expression> {
@@ -1018,18 +1033,22 @@ mod tests {
 int x = 10;
 int x;
 int x, y, z;
+char c1;
+char c2 = '\n';
 ";
         let expected = vec![
             vec![("int", "x", Some("10".to_string()))],
             vec![("int", "x", None)],
             vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
+            vec![("char", "c1", None)],
+            vec![("char", "c2", Some("\n".to_string()))],
         ];
 
         // when
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut external_items: Vec<ast::ExternalItem> = vec![];
-        let rows_count = 3;
+        let rows_count = 5;
         for _ in 0..rows_count {
             external_items.push(p.parse_external_item().unwrap());
             p.next_token();
@@ -1229,6 +1248,7 @@ int five = 5;
 int x = 10;
 int x;
 int x, y, z;
+char c = 'a';
 struct { int x; int y; } p;
 struct { int a; int b; } p, q;
 struct point z;
@@ -1240,6 +1260,7 @@ struct User a = { 1, 2 };
             vec![("int", "x", Some("10"))],
             vec![("int", "x", None)],
             vec![("int", "x", None), ("int", "y", None), ("int", "z", None)],
+            vec![("char", "c", Some("a"))],
             vec![("struct {\n    int x;\n    int y;\n}", "p", None)],
             vec![("struct {\n    int a;\n    int b;\n}", "p", None), ("struct {\n    int a;\n    int b;\n}", "q", None)],
             vec![("struct point", "z", None)],
@@ -1251,7 +1272,7 @@ struct User a = { 1, 2 };
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 9;
+        let rows_count = 10;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
@@ -1852,6 +1873,7 @@ int c[] = { 1, 2 };
 int d[][4] = { {1, 2, 3, 4}, {1, 2, 3, 4} };
 int e[] = {};
 int f[] = {1, 2, };
+char *s = \"Hello!\\n\";
 struct key {
     char *word;
     int count;
@@ -1868,6 +1890,7 @@ struct key keytab[3];
             ("int[][4]", "d", Some("{{1, 2, 3, 4}, {1, 2, 3, 4}}")),
             ("int[]", "e", Some("{}")),
             ("int[]", "f", Some("{1, 2}")),
+            ("char*", "s", Some("Hello!\\n")),
             ("struct key {\n    char* word;\n    int count;\n}[3]", "keytab", None),
             ("struct key[3]", "keytab", None),
         ];
@@ -1876,7 +1899,7 @@ struct key keytab[3];
         let l = lexer::Lexer::new(input);
         let mut p = Parser::new(l);
         let mut statements: Vec<ast::Statement> = vec![];
-        let rows_count = 11;
+        let rows_count = 12;
         for _ in 0..rows_count {
             statements.push(p.parse_statement().unwrap());
             p.next_token();
