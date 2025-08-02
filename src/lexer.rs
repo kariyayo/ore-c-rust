@@ -73,6 +73,32 @@ impl Lexer {
             .unwrap_or('\u{0}');
     }
 
+    fn read_character_literal(&mut self) -> String {
+        self.read_char();
+        return if self.ch == '\\' {
+            self.read_char();
+            let c = self.ch;
+            self.read_char();
+            format!("\\{}", c)
+        } else {
+            let c = self.ch;
+            self.read_char();
+            format!("{}", c)
+        };
+    }
+
+    fn read_string_literal(&mut self) -> String {
+        self.read_char();
+        let start_pos = self.position;
+        let mut before = '"';
+        while self.ch != '"' || before == '\\' {
+            before = self.ch;
+            self.read_char();
+        }
+        let s = self.input[start_pos..self.position].to_string();
+        format!("{}", s)
+    }
+
     pub(crate) fn next_token(&mut self) -> token::Token {
         self.skip_whitespace();
         let (tok, skip_read) = match self.ch {
@@ -341,6 +367,20 @@ impl Lexer {
                 },
                 false,
             ),
+            '\'' => (
+                token::Token {
+                    token_type: TokenType::Character,
+                    literal: self.read_character_literal(),
+                },
+                false,
+            ),
+            '"' => (
+                token::Token {
+                    token_type: TokenType::String,
+                    literal: self.read_string_literal(),
+                },
+                false,
+            ),
             _ => {
                 if self.is_letter(self.ch) {
                     let literal = self.read_identifier();
@@ -433,6 +473,12 @@ for (;;) ++a;
 struct a {};
 point.x;
 p->x;
+'A';
+'\\'';
+'\\n';
+'\\\\';
+\"Hello, World!\";
+\" escape \\\" \\n \";
 ";
         let tests = vec![
             (TokenType::Int, "int"),
@@ -600,6 +646,18 @@ p->x;
             (TokenType::Ident, "p"),
             (TokenType::Arrow, "->"),
             (TokenType::Ident, "x"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Character, "A"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::Character, "\\'"), // -> '\''
+            (TokenType::Semicolon, ";"),
+            (TokenType::Character, "\\n"), // -> '\n'
+            (TokenType::Semicolon, ";"),
+            (TokenType::Character, "\\\\"), // -> '\\'
+            (TokenType::Semicolon, ";"),
+            (TokenType::String, "Hello, World!"),
+            (TokenType::Semicolon, ";"),
+            (TokenType::String, " escape \\\" \\n "), // -> " escape \" \n"
             (TokenType::Semicolon, ";"),
         ];
 

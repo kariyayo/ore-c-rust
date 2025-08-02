@@ -141,6 +141,8 @@ pub enum SwitchLabel {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
     Int { value: i32 },
+    CharacterLiteral { value: char },
+    StringLiteral { value: String },
     Identifier { value: String },
     PrefixExpression { operator: String, right: Box<Expression> },
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
@@ -242,6 +244,8 @@ impl Expression {
     pub fn to_string(&self) -> String {
         return match self {
             Expression::Int { value } => value.to_string(),
+            Expression::CharacterLiteral { value } => value.to_string(),
+            Expression::StringLiteral { value } => value.to_string(),
             Expression::Identifier { value } => value.to_string(),
             Expression::PrefixExpression { operator, right } => {
                 format!("({}{})", operator, right.to_string())
