@@ -1,10 +1,5 @@
 use std::fmt;
 
-
-pub struct Program {
-    pub external_items: Vec<ExternalItem>,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
@@ -47,7 +42,7 @@ impl StructDecl {
 
 impl fmt::Display for StructDecl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        return write!(f, "{} {}", self.type_dec.type_name(), self.name);
+        write!(f, "{} {}", self.type_dec.type_name(), self.name)
     }
 }
 
@@ -69,6 +64,12 @@ impl Parameter {
     pub fn new(p: (TypeRef, String)) -> Parameter {
         return Parameter { type_dec: p.0, name: p.1 };
     }
+}
+
+/// ASTのルートノード
+#[derive(Debug, PartialEq, Eq)]
+pub struct Program {
+    pub external_items: Vec<ExternalItem>,
 }
 
 /// 文を表すノード
@@ -152,17 +153,23 @@ pub enum Expression {
     IndexExpression { left: Box<Expression>, index: Box<Expression> },
 }
 
-impl Statement {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.external_items)
+    }
+}
+
+impl fmt::Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
             Statement::Return { value } => {
                 match value {
-                    Some(v) => format!("return {};", v.to_string()),
-                    None => "return;".to_string(),
+                    Some(v) => write!(f, "return {};", v.to_string()),
+                    None => write!(f, "return;"),
                 }
             },
-            Statement::Break => "break;".to_string(),
-            Statement::Continue => "continue;".to_string(),
+            Statement::Break => write!(f, "break;"),
+            Statement::Continue => write!(f, "continue;"),
             Statement::VarDecl { declarators } => {
                 let mut parts: Vec<String> = vec![];
                 for (type_ref, declarator) in declarators {
@@ -172,7 +179,7 @@ impl Statement {
                     }
                     parts.push(s);
                 }
-                format!("{};", parts.join(", "))
+                write!(f, "{};", parts.join(", "))
             },
             Statement::Block { statements } => {
                 let mut result = "{\n".to_string();
@@ -180,7 +187,7 @@ impl Statement {
                     result.push_str(&format!("    {}\n", stmt.to_string()));
                 }
                 result.push_str("}");
-                result
+                write!(f, "{}", result)
             },
             Statement::If { condition, consequence, alternative } => {
                 let mut result = format!("if ({}) {}", condition.to_string(), consequence.to_string());
@@ -190,7 +197,7 @@ impl Statement {
                     },
                     None => {},
                 }
-                result
+                write!(f, "{}", result)
             },
             Statement::Switch { condition, switch_block: switch_body } => {
                 let mut result = format!("switch ({}) {{\n", condition.to_string());
@@ -210,13 +217,13 @@ impl Statement {
                     }
                 }
                 result.push_str("}");
-                result
+                write!(f, "{}", result)
             },
             Statement::While { condition, body } => {
-                format!("while ({}) {}", condition.to_string(), body.to_string())
+                write!(f, "while ({}) {}", condition.to_string(), body.to_string())
             },
             Statement::DoWhile { body, condition } => {
-                format!("do {} while ({});", body.to_string(), condition.to_string())
+                write!(f, "do {} while ({});", body.to_string(), condition.to_string())
             },
             Statement::For { init, condition, post, body } => {
                 let init_str = match init {
@@ -231,41 +238,41 @@ impl Statement {
                     Some(p) => p.to_string(),
                     None => "".to_string(),
                 };
-                format!("for ({}, {}, {}) {}", init_str, condition_str, post_str, body.to_string())
+                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.to_string())
             },
             Statement::ExpressionStatement { expression } => {
-                format!("{};", expression.to_string())
+                write!(f, "{};", expression.to_string())
             },
         };
     }
 }
 
-impl Expression {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            Expression::Int { value } => value.to_string(),
-            Expression::CharacterLiteral { value } => value.to_string(),
-            Expression::StringLiteral { value } => value.to_string(),
-            Expression::Identifier { value } => value.to_string(),
+            Expression::Int { value } => write!(f, "{}",value),
+            Expression::CharacterLiteral { value } => write!(f, "{}", value),
+            Expression::StringLiteral { value } => write!(f, "{}", value),
+            Expression::Identifier { value } => write!(f, "{}", value),
             Expression::PrefixExpression { operator, right } => {
-                format!("({}{})", operator, right.to_string())
+                write!(f, "({}{})", operator, right.to_string())
             },
             Expression::InfixExpression { operator, left, right } => {
-                format!("({} {} {})", left.to_string(), operator, right.to_string())
+                write!(f, "({} {} {})", left.to_string(), operator, right.to_string())
             },
             Expression::PostfixExpression { operator, left } => {
-                format!("({}{})", left.to_string(), operator)
+                write!(f, "({}{})", left.to_string(), operator)
             },
             Expression::FunctionCallExpression { function_name, arguments } => {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.to_string()).collect();
-                format!("{}({})", function_name, args.join(", "))
+                write!(f, "{}({})", function_name, args.join(", "))
             },
             Expression::InitializerExpression { elements } => {
                 let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
-                format!("{{{}}}", args.join(", "))
+                write!(f, "{{{}}}", args.join(", "))
             },
             Expression::IndexExpression { left, index } => {
-                format!("({}[{}])", left.to_string(), index.to_string())
+                write!(f, "({}[{}])", left.to_string(), index.to_string())
             },
         }
     }
