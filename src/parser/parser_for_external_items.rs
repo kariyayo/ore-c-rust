@@ -99,7 +99,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
 
-    use crate::lexer;
+    use crate::lexer::Lexer;
     use super::*;
 
     #[test]
@@ -121,22 +121,20 @@ char c2 = '\n';
         ];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut external_items: Vec<ExternalItem> = vec![];
-        let rows_count = 5;
-        for _ in 0..rows_count {
-            external_items.push(p.parse_external_item().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<ExternalItem> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_external_item().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(external_items.len(), rows_count);
-        for (i, item) in external_items.iter().enumerate() {
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, item) in parse_results.iter().enumerate() {
             match item {
                 ExternalItem::VarDecl { declarators } => {
-                    for (j, (type_dec, declarator)) in declarators.iter().enumerate() {
-                        let (expected_type, expected_name, expected_value) = &expected[i][j];
+                    for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
+                        let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
                         assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
@@ -249,21 +247,19 @@ struct point* movepoint(struct point* p, int x, int y);
         ];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut external_items: Vec<ExternalItem> = vec![];
-        let rows_count = 6;
-        for _ in 0..rows_count {
-            external_items.push(p.parse_external_item().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<ExternalItem> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_external_item().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(external_items.len(), rows_count);
-        for (i, item) in external_items.iter().enumerate() {
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, item) in parse_results.iter().enumerate() {
             match item {
                 ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } => {
-                    let (expected_return_type, expected_name, expected_parameters, expected_body) = &expected[i];
+                    let (expected_return_type, expected_name, expected_parameters, expected_body) = &expected[row_num];
                     assert_eq!(return_type_dec.type_name(), expected_return_type.to_string());
                     assert_eq!(*name, *expected_name);
                     assert_eq!(parameters, expected_parameters);
@@ -293,21 +289,19 @@ struct key {
         ];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut external_items: Vec<ExternalItem> = vec![];
-        let rows_count = 2;
-        for _ in 0..rows_count {
-            external_items.push(p.parse_external_item().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<ExternalItem> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_external_item().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(external_items.len(), rows_count);
-        for (i, item) in external_items.iter().enumerate() {
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, item) in parse_results.iter().enumerate() {
             match item {
                 ExternalItem::Struct(TypeRef::Struct { tag_name, members }) => {
-                    let (expected_type, expected_members, expected_tag_name) = &expected[i];
+                    let (_, expected_members, expected_tag_name) = &expected[row_num];
                     assert_eq!(tag_name.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_tag_name.unwrap_or(""));
                     assert_eq!(members.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("; "), expected_members.to_string());
                 }

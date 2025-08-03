@@ -385,7 +385,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
 
-    use crate::{lexer, parser::ast::Expression};
+    use crate::{lexer::Lexer, parser::ast::Expression};
     use super::*;
 
     #[test]
@@ -417,22 +417,20 @@ struct User a = { 1, 2 };
         ];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 10;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::VarDecl { declarators } => {
-                    for (j, (type_dec, declarator)) in declarators.iter().enumerate() {
-                        let (expected_type, expected_name, expected_value) = &expected[i][j];
+                    for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
+                        let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
                         assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x| x.to_string()));
@@ -453,21 +451,19 @@ return 9876;
         let expected = vec![5, 9876];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 2;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let expected_value= expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::Return { value } => {
+                    let expected_value= expected[row_num];
                     assert_eq!(value, &Some(Expression::Int { value: expected_value }));
                 }
                 _ => panic!("Statement is not Return"),
@@ -485,20 +481,19 @@ foobar;
         let expected = vec!["x", "foobar"];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 2;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let expected_value= expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::ExpressionStatement { expression } => {
+                    let expected_value= expected[row_num];
                     assert_eq!(expression, &Expression::Identifier { value: expected_value.to_string() });
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
@@ -521,20 +516,19 @@ foobar;
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 3;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_operator, expected_right)= &expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::ExpressionStatement { expression: Expression::PrefixExpression { operator, right } } => {
+                    let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(right.as_ref(), expected_right);
                 }
@@ -582,20 +576,19 @@ a %= 3;
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 15;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_operator, expected_left, expected_right)= &expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::ExpressionStatement { expression: Expression::InfixExpression { operator, left, right } } => {
+                    let (expected_operator, expected_left, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.as_ref(), expected_left);
                     assert_eq!(right.as_ref(), expected_right);
@@ -641,7 +634,7 @@ a %= 3;
         ];
         for (input, expected) in tests.iter() {
             // when
-            let mut p = Parser::new(lexer::Lexer::new(input));
+            let mut p = Parser::new(Lexer::new(input));
             let stmt = p.parse_statement().unwrap();
             p.next_token();
 
@@ -668,20 +661,19 @@ if (x < y) x + 2; else y;
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 4;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_condition, expected_consequence, expected_alternative) = expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::If { condition, consequence, alternative } => {
+                    let (expected_condition, expected_consequence, expected_alternative) = expected[row_num];
                     assert_eq!(condition.to_string(), expected_condition.to_string());
                     assert_eq!(consequence.to_string(), expected_consequence.to_string());
                     assert_eq!(alternative.as_ref().map(|a| a.to_string()), expected_alternative.map(|a| a.to_string()));
@@ -719,18 +711,18 @@ case 3:
 }
 ";
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
         let rows_count = 2;
         for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        let stmt1 = statements.first().unwrap();
-        let stmt2 = statements.get(1).unwrap();
+        assert_eq!(parse_results.len(), rows_count);
+        let stmt1 = parse_results.first().unwrap();
+        let stmt2 = parse_results.get(1).unwrap();
 
         // 1つ目のswitch文のチェック
         if let Statement::Switch { condition, switch_block } = stmt1 {
@@ -837,20 +829,19 @@ while (x < y) {
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 3;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), 3);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_condition, expected_body) = expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::While { condition, body} => {
+                    let (expected_condition, expected_body) = expected[row_num];
                     assert_eq!(condition.to_string(), expected_condition.to_string());
                     assert_eq!(body.to_string(), expected_body.to_string());
                 }
@@ -873,20 +864,19 @@ do x + 2; while (x < y);
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 2;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_body, expected_condition) = expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::DoWhile { body, condition } => {
+                    let (expected_body, expected_condition) = expected[row_num];
                     assert_eq!(body.to_string(), expected_body.to_string());
                     assert_eq!(condition.to_string(), expected_condition.to_string());
                 }
@@ -911,20 +901,19 @@ for (;;) ++a;
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 3;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_init, expected_condition, expected_post, expected_body) = expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::For { init, condition, post, body} => {
+                    let (expected_init, expected_condition, expected_post, expected_body) = expected[row_num];
                     assert_eq!(init.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_init.to_string());
                     assert_eq!(condition.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_condition.to_string());
                     assert_eq!(post.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_post.to_string());
@@ -971,22 +960,20 @@ struct key keytab[3];
         ];
 
         // when
-        let l = lexer::Lexer::new(input);
-        let mut p = Parser::new(l);
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 12;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::VarDecl { declarators } => {
                     let (type_dec, declarator) = declarators.first().unwrap();
-                    let (expected_type, expected_name, expected_value) = &expected[i];
+                    let (expected_type, expected_name, expected_value) = &expected[row_num];
                     assert_eq!(type_dec.type_name(), expected_type.to_string());
                     assert_eq!(declarator.name, *expected_name);
                     assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x|x.to_string()));
@@ -1011,20 +998,19 @@ piyo(3+2, b);
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 3;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_function_name, expected_arguments)= &expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (i, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::ExpressionStatement { expression: Expression::FunctionCallExpression { function_name, arguments } } => {
+                    let (expected_function_name, expected_arguments)= &expected[i];
                     assert_eq!(function_name, expected_function_name);
                     let xs: Vec<String> = arguments.iter().map(|x| x.to_string()).collect();
                     assert_eq!(xs, *expected_arguments);
@@ -1047,20 +1033,19 @@ a--;
         ];
 
         // when
-        let mut p = Parser::new(lexer::Lexer::new(input));
-        let mut statements: Vec<Statement> = vec![];
-        let rows_count = 2;
-        for _ in 0..rows_count {
-            statements.push(p.parse_statement().unwrap());
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().unwrap());
             p.next_token();
         }
 
         // then
-        assert_eq!(statements.len(), rows_count);
-        for (i, stmt) in statements.iter().enumerate() {
-            let (expected_operator, expected_right)= &expected[i];
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
                 Statement::ExpressionStatement { expression: Expression::PostfixExpression { operator, left } } => {
+                    let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.as_ref(), expected_right);
                 }
