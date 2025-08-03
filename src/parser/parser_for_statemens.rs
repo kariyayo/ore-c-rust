@@ -47,10 +47,10 @@ impl Parser {
     fn parse_return_statement(&mut self) -> Result<Statement> {
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::Return { value: None });
+            return Ok(Statement::Return(None));
         } else {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
-            let result = Statement::Return { value: Some(value) };
+            let result = Statement::Return(Some(value));
             self.next_token();
             return if self.cur_token.token_type == TokenType::Semicolon {
                 Ok(result)
@@ -84,7 +84,7 @@ impl Parser {
                 self.parse_declarators(&type_dec)?
             };
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::VarDecl { declarators });
+            return Ok(Statement::VarDecl(declarators));
         } else {
             let error_msg = format!("[parse_vardecl_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
             return Err(Error { errors: vec![error_msg] });
@@ -104,9 +104,9 @@ impl Parser {
             self.next_token();
         }
         if self.cur_token.token_type == TokenType::Eof {
-            return Ok(Statement::Block { statements });
+            return Ok(Statement::Block(statements));
         } else if self.cur_token.token_type == TokenType::Rbrace {
-            return Ok(Statement::Block { statements });
+            return Ok(Statement::Block(statements));
         } else {
             let error_msg = format!("[parse_block_statement] expected next token to be Rbrace, got {:?}", self.cur_token.token_type);
             return Err(Error { errors: vec![error_msg] });
@@ -370,7 +370,7 @@ impl Parser {
     // <expression>;
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let expression = self.parse_expression(ExpressionPrecedence::Lowest);
-        let result = expression.map(|exp| Statement::ExpressionStatement { expression: exp })?;
+        let result = expression.map(|exp| Statement::ExpressionStatement(exp))?;
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(result);
@@ -428,7 +428,7 @@ struct User a = { 1, 2 };
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::VarDecl { declarators } => {
+                Statement::VarDecl(declarators) => {
                     for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
@@ -462,9 +462,9 @@ return 9876;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::Return { value } => {
+                Statement::Return(value) => {
                     let expected_value= expected[row_num];
-                    assert_eq!(value, &Some(Expression::Int { value: expected_value }));
+                    assert_eq!(value, &Some(Expression::Int(expected_value)));
                 }
                 _ => panic!("Statement is not Return"),
             }
@@ -492,9 +492,9 @@ foobar;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement { expression } => {
+                Statement::ExpressionStatement(expression) => {
                     let expected_value= expected[row_num];
-                    assert_eq!(expression, &Expression::Identifier { value: expected_value.to_string() });
+                    assert_eq!(expression, &Expression::Identifier(expected_value.to_string()));
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
             }
@@ -510,9 +510,9 @@ foobar;
 ++a;
 ";
         let expected = vec![
-            ("!", Expression::Identifier { value: "foobar".to_string() }),
-            ("-", Expression::Int { value: 5 }),
-            ("++", Expression::Identifier { value: "a".to_string() }),
+            ("!", Expression::Identifier("foobar".to_string())),
+            ("-", Expression::Int(5)),
+            ("++", Expression::Identifier("a".to_string())),
         ];
 
         // when
@@ -527,7 +527,7 @@ foobar;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement { expression: Expression::PrefixExpression { operator, right } } => {
+                Statement::ExpressionStatement(Expression::PrefixExpression { operator, right }) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(right.as_ref(), expected_right);
@@ -558,21 +558,21 @@ a /= 3;
 a %= 3;
 ";
         let expected = vec![
-            ("+", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("-", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("*", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("/", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("%", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("==", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("!=", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            (">", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("<", Expression::Int { value: 5 }, Expression::Int { value: 6 }),
-            ("=", Expression::Identifier { value: "xyz".to_string() }, Expression::Int { value: 10 }),
-            ("+=", Expression::Identifier { value: "a".to_string() }, Expression::Int { value: 3 }),
-            ("-=", Expression::Identifier { value: "a".to_string() }, Expression::Int { value: 3 }),
-            ("*=", Expression::Identifier { value: "a".to_string() }, Expression::Int { value: 3 }),
-            ("/=", Expression::Identifier { value: "a".to_string() }, Expression::Int { value: 3 }),
-            ("%=", Expression::Identifier { value: "a".to_string() }, Expression::Int { value: 3 }),
+            ("+", Expression::Int(5), Expression::Int(6)),
+            ("-", Expression::Int(5), Expression::Int(6)),
+            ("*", Expression::Int(5), Expression::Int(6)),
+            ("/", Expression::Int(5), Expression::Int(6)),
+            ("%", Expression::Int(5), Expression::Int(6)),
+            ("==", Expression::Int(5), Expression::Int(6)),
+            ("!=", Expression::Int(5), Expression::Int(6)),
+            (">", Expression::Int(5), Expression::Int(6)),
+            ("<", Expression::Int(5), Expression::Int(6)),
+            ("=", Expression::Identifier("xyz".to_string()), Expression::Int(10)),
+            ("+=", Expression::Identifier("a".to_string()), Expression::Int(3)),
+            ("-=", Expression::Identifier("a".to_string()), Expression::Int(3)),
+            ("*=", Expression::Identifier("a".to_string()), Expression::Int(3)),
+            ("/=", Expression::Identifier("a".to_string()), Expression::Int(3)),
+            ("%=", Expression::Identifier("a".to_string()), Expression::Int(3)),
         ];
 
         // when
@@ -587,7 +587,7 @@ a %= 3;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement { expression: Expression::InfixExpression { operator, left, right } } => {
+                Statement::ExpressionStatement(Expression::InfixExpression { operator, left, right }) => {
                     let (expected_operator, expected_left, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.as_ref(), expected_left);
@@ -684,18 +684,18 @@ case 3:
             assert_eq!(condition.to_string(), "a");
             // 各ラベルのチェック
             assert_eq!(switch_block.label_entries.len(), 4);
-            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int { value: 1 }));
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int(1)));
             assert_eq!(switch_block.label_entries[0].start_index, 0);
-            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int { value: 2 }));
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int(2)));
             assert_eq!(switch_block.label_entries[1].start_index, 2);
-            assert_eq!(switch_block.label_entries[2].labels[0], SwitchLabel::Case(Expression::Int { value: 3 }));
+            assert_eq!(switch_block.label_entries[2].labels[0], SwitchLabel::Case(Expression::Int(3)));
             assert_eq!(switch_block.label_entries[2].start_index, 4);
             assert_eq!(switch_block.label_entries[3].labels[0], SwitchLabel::Default);
             assert_eq!(switch_block.label_entries[3].start_index, 6);
 
             assert_eq!(switch_block.body.len(), 7);
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[0] {
-                assert_eq!(expression, &Expression::Identifier { value: "x".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[0] {
+                assert_eq!(expression, &Expression::Identifier("x".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
@@ -703,8 +703,8 @@ case 3:
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[2] {
-                assert_eq!(expression, &Expression::Identifier { value: "y".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[2] {
+                assert_eq!(expression, &Expression::Identifier("y".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
@@ -712,8 +712,8 @@ case 3:
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[4] {
-                assert_eq!(expression, &Expression::Identifier { value: "aaa".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[4] {
+                assert_eq!(expression, &Expression::Identifier("aaa".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
@@ -721,8 +721,8 @@ case 3:
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[6] {
-                assert_eq!(expression, &Expression::Identifier { value: "bbb".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[6] {
+                assert_eq!(expression, &Expression::Identifier("bbb".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
@@ -735,20 +735,20 @@ case 3:
             assert_eq!(condition.to_string(), "x");
             // 各ラベルのチェック
             assert_eq!(switch_block.label_entries.len(), 2);
-            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int { value: 1 }));
-            assert_eq!(switch_block.label_entries[0].labels[1], SwitchLabel::Case(Expression::Int { value: 2 }));
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int(1)));
+            assert_eq!(switch_block.label_entries[0].labels[1], SwitchLabel::Case(Expression::Int(2)));
             assert_eq!(switch_block.label_entries[0].start_index, 0);
-            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int { value: 3 }));
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int(3)));
             assert_eq!(switch_block.label_entries[1].start_index, 1);
 
             assert_eq!(switch_block.body.len(), 3);
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[0] {
-                assert_eq!(expression, &Expression::Identifier { value: "bbb".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[0] {
+                assert_eq!(expression, &Expression::Identifier("bbb".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            if let Statement::ExpressionStatement { expression } = &switch_block.body[1] {
-                assert_eq!(expression, &Expression::Identifier { value: "ccc".to_string() });
+            if let Statement::ExpressionStatement(expression) = &switch_block.body[1] {
+                assert_eq!(expression, &Expression::Identifier("ccc".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
@@ -926,7 +926,7 @@ struct key keytab[3];
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::VarDecl { declarators } => {
+                Statement::VarDecl(declarators) => {
                     let (type_dec, declarator) = declarators.first().unwrap();
                     let (expected_type, expected_name, expected_value) = &expected[row_num];
                     assert_eq!(type_dec.type_name(), expected_type.to_string());
@@ -964,7 +964,7 @@ piyo(3+2, b);
         assert_eq!(parse_results.len(), expected.len());
         for (i, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement { expression: Expression::FunctionCallExpression { function_name, arguments } } => {
+                Statement::ExpressionStatement(Expression::FunctionCallExpression { function_name, arguments }) => {
                     let (expected_function_name, expected_arguments)= &expected[i];
                     assert_eq!(function_name, expected_function_name);
                     let xs: Vec<String> = arguments.iter().map(|x| x.to_string()).collect();
@@ -983,8 +983,8 @@ i++;
 a--;
 ";
         let expected = vec![
-            ("++", Expression::Identifier { value: "i".to_string() }),
-            ("--", Expression::Identifier { value: "a".to_string() }),
+            ("++", Expression::Identifier("i".to_string())),
+            ("--", Expression::Identifier("a".to_string())),
         ];
 
         // when
@@ -999,7 +999,7 @@ a--;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement { expression: Expression::PostfixExpression { operator, left } } => {
+                Statement::ExpressionStatement(Expression::PostfixExpression { operator, left }) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.as_ref(), expected_right);

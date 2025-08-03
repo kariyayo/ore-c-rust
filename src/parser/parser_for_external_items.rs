@@ -51,7 +51,7 @@ impl Parser {
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)] });
         }
-        return Ok(ExternalItem::VarDecl { declarators });
+        return Ok(ExternalItem::VarDecl(declarators));
     }
 
     fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItem> {
@@ -132,7 +132,7 @@ char c2 = '\n';
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::VarDecl { declarators } => {
+                ExternalItem::VarDecl(declarators)  => {
                     for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
@@ -201,10 +201,10 @@ struct point* movepoint(struct point* p, int x, int y);
                 "bar",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Array(
-                            Box::new(TypeRef::Named("int".to_string())),
-                            None,
-                        ),
+                        type_dec: TypeRef::Array{
+                            type_dec: Box::new(TypeRef::Named("int".to_string())),
+                            size: None,
+                        },
                         name: "as".to_string(),
                     },
                 ],

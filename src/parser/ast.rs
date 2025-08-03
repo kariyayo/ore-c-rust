@@ -4,7 +4,7 @@ use std::fmt;
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
-    Array(Box<TypeRef>, Option<u32>), // 配列型（例: int[10]）
+    Array{ type_dec: Box<TypeRef>, size: Option<u32>}, // 配列型（例: int[10]）
     Struct{ tag_name: Option<String>, members: Vec<StructDecl> }, // 構造体
 }
 
@@ -13,7 +13,7 @@ impl TypeRef {
         match self {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
-            TypeRef::Array(type_ref, size) => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
+            TypeRef::Array { type_dec: type_ref, size } => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
             TypeRef::Struct { tag_name, members } => {
                 if members.len() == 0 {
                     format!( "struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
@@ -51,7 +51,7 @@ impl fmt::Display for StructDecl {
 pub enum ExternalItem {
     FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
     Struct(TypeRef),
-    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
+    VarDecl(Vec<(TypeRef, Declarator)>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -75,17 +75,17 @@ pub struct Program {
 /// 文を表すノード
 #[derive(Debug, PartialEq, Eq)]
 pub enum Statement {
-    Return { value: Option<Expression> },
+    Return(Option<Expression>),
     Break,
     Continue,
-    VarDecl { declarators: Vec<(TypeRef, Declarator)> },
-    Block { statements: Vec<Statement> },
+    VarDecl(Vec<(TypeRef, Declarator)>),
+    Block(Vec<Statement>),
     If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
     Switch { condition: Expression, switch_block: SwitchBlock },
     While { condition: Expression, body: Box<Statement> },
     DoWhile { body: Box<Statement>, condition: Expression },
     For { init: Option<Expression>, condition: Option<Expression>, post: Option<Expression>, body: Box<Statement> },
-    ExpressionStatement { expression: Expression },
+    ExpressionStatement(Expression),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -141,10 +141,10 @@ pub enum SwitchLabel {
 /// 式を表すノード
 #[derive(Debug, PartialEq, Eq)]
 pub enum Expression {
-    Int { value: i32 },
-    CharacterLiteral { value: char },
-    StringLiteral { value: String },
-    Identifier { value: String },
+    Int(i32),
+    CharacterLiteral(char),
+    StringLiteral(String),
+    Identifier(String),
     PrefixExpression { operator: String, right: Box<Expression> },
     InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
     PostfixExpression { operator: String, left: Box<Expression> },
@@ -162,7 +162,7 @@ impl fmt::Display for Program {
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            Statement::Return { value } => {
+            Statement::Return(value) => {
                 match value {
                     Some(v) => write!(f, "return {};", v.to_string()),
                     None => write!(f, "return;"),
@@ -170,7 +170,7 @@ impl fmt::Display for Statement {
             },
             Statement::Break => write!(f, "break;"),
             Statement::Continue => write!(f, "continue;"),
-            Statement::VarDecl { declarators } => {
+            Statement::VarDecl(declarators) => {
                 let mut parts: Vec<String> = vec![];
                 for (type_ref, declarator) in declarators {
                     let mut s = format!("{} {}", type_ref.type_name(), declarator.name);
@@ -181,7 +181,7 @@ impl fmt::Display for Statement {
                 }
                 write!(f, "{};", parts.join(", "))
             },
-            Statement::Block { statements } => {
+            Statement::Block(statements) => {
                 let mut result = "{\n".to_string();
                 for stmt in statements {
                     result.push_str(&format!("    {}\n", stmt.to_string()));
@@ -240,7 +240,7 @@ impl fmt::Display for Statement {
                 };
                 write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.to_string())
             },
-            Statement::ExpressionStatement { expression } => {
+            Statement::ExpressionStatement(expression) => {
                 write!(f, "{};", expression.to_string())
             },
         };
@@ -250,10 +250,10 @@ impl fmt::Display for Statement {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return match self {
-            Expression::Int { value } => write!(f, "{}",value),
-            Expression::CharacterLiteral { value } => write!(f, "{}", value),
-            Expression::StringLiteral { value } => write!(f, "{}", value),
-            Expression::Identifier { value } => write!(f, "{}", value),
+            Expression::Int(value) => write!(f, "{}",value),
+            Expression::CharacterLiteral(value) => write!(f, "{}", value),
+            Expression::StringLiteral(value) => write!(f, "{}", value),
+            Expression::Identifier(value) => write!(f, "{}", value),
             Expression::PrefixExpression { operator, right } => {
                 write!(f, "({}{})", operator, right.to_string())
             },

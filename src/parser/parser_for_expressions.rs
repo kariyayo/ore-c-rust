@@ -196,24 +196,24 @@ impl Parser {
     }
 
     pub(super) fn parse_identifier(&self) -> Result<Expression> {
-        return Ok(Expression::Identifier { value: self.cur_token.literal.clone() });
+        return Ok(Expression::Identifier(self.cur_token.literal.clone()));
     }
 
     pub(super) fn parse_integer_literal(&self) -> Result<Expression> {
         return self.cur_token.literal.parse()
-            .map(|value| Expression::Int { value })
+            .map(|value| Expression::Int(value))
             .map_err(|_| Error { errors: vec!["[parse_integer_literal] parse int error".to_string()] });
     }
 
     pub(super) fn parse_character_literal(&self) -> Result<Expression> {
         return self.cur_token.literal.parse()
-            .map(|value| Expression::CharacterLiteral { value })
+            .map(|value| Expression::CharacterLiteral(value))
             .map_err(|_| Error { errors: vec![format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()] });
     }
 
     pub(super) fn parse_string_literal(&self) -> Result<Expression> {
         return self.cur_token.literal.parse()
-            .map(|value| Expression::StringLiteral { value })
+            .map(|value| Expression::StringLiteral(value))
             .map_err(|_| Error { errors: vec!["[parse_string_literal] parse string error".to_string()] });
     }
 
@@ -263,7 +263,7 @@ impl Parser {
 
     pub(super) fn parse_function_call_expression(&mut self, left: Expression) -> Result<Expression> {
         let function_name = match left {
-            Expression::Identifier { value } => value,
+            Expression::Identifier(value) => value,
             _ => {
                 return Err(Error { errors: vec![format!("[parse_function_call_expression] expected `left` to be Expression::Identifier, got {:?}", left)] });
             }
@@ -328,7 +328,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
 
-    use crate::{lexer::Lexer, parser::ast::Expression};
+    use crate::lexer::Lexer;
     use super::*;
 
     #[test]

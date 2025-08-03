@@ -149,7 +149,7 @@ impl Parser {
                 if self.cur_token.token_type != TokenType::Rbracket {
                     return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
                 }
-                type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
+                type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: None };
             }
 
             result.push(f((type_dec, name)));
@@ -196,7 +196,7 @@ impl Parser {
                 self.next_token();
                 if self.cur_token.token_type == TokenType::Rbracket {
                     // <type_ref> <ident>[] = {<expression>, <expression>, ...};
-                    type_dec = ast::TypeRef::Array(Box::new(type_dec), None);
+                    type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: None };
                 } else {
                     // <type_ref> <ident>[<size>];
                     if self.cur_token.token_type != TokenType::Integer {
@@ -205,7 +205,7 @@ impl Parser {
                     let size = self.cur_token.literal
                         .parse::<u32>()
                         .map_err(|_| Error { errors: vec![format!("[parse_declarators] failed to parse integer size from {:?}", self.cur_token.literal)] })?;
-                    type_dec = ast::TypeRef::Array(Box::new(type_dec), Some(size));
+                    type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: Some(size) };
                     self.next_token();
                     if self.cur_token.token_type != TokenType::Rbracket {
                         return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be RBracket, got {:?}", self.cur_token.token_type)] });
@@ -215,7 +215,7 @@ impl Parser {
 
             let declarator = if self.peek_token.token_type != TokenType::Assign {
                 // 値の指定がない、かつ、サイズが指定されていない配列型の場合はエラー
-                if let ast::TypeRef::Array(_, None) = type_dec {
+                if let TypeRef::Array { type_dec: _, size: None } = type_dec {
                     return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Assign, got {:?}", self.peek_token.token_type)] });
                 }
                 ast::Declarator { name, value: None }
