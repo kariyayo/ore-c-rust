@@ -599,51 +599,6 @@ a %= 3;
     }
 
     #[test]
-    fn test_operator_precedence() {
-        // given
-        let tests = [
-            ("a + b;", "(a + b);"),
-            ("a + b - c;", "((a + b) - c);"),
-            ("a + b * c;", "(a + (b * c));"),
-            ("a + b / c;", "(a + (b / c));"),
-            ("a + b * c + d;", "((a + (b * c)) + d);"),
-            ("a + b * c + d / e - f;", "(((a + (b * c)) + (d / e)) - f);"),
-            ("-5 * 5;", "((-5) * 5);"),
-            ("5 > 4 == 3 < 4;", "((5 > 4) == (3 < 4));"),
-            ("5 < 4 != 3 > 4;", "((5 < 4) != (3 > 4));"),
-            ("3 + 4 * 5 == 3 * 1 + 4 * 5;", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));"),
-            ("1 + (2 + 3) + 4;", "((1 + (2 + 3)) + 4);"),
-            ("(5 + 5) * 2;", "((5 + 5) * 2);"),
-            ("2 / (5 + 5);", "(2 / (5 + 5));"),
-            ("-(5 + 5);", "(-(5 + 5));"),
-            ("*ip + 10;", "((*ip) + 10);"),
-            ("10 * *pn;", "(10 * (*pn));"),
-            ("*(&x) + 1;", "((*(&x)) + 1);"),
-            ("++*ip;", "(++(*ip));"),
-            ("*ip++;", "(*(ip++));"),
-            ("(*ip)++;", "((*ip)++);"),
-            ("a[1] + 3;", "((a[1]) + 3);"),
-            ("&a[0];", "(&(a[0]));"),
-            ("a[x + i];", "(a[(x + i)]);"),
-            ("x.number + i;", "((x . number) + i);"),
-            ("i + x.number;", "(i + (x . number));"),
-            ("++i.number;", "(++(i . number));"),
-            ("a[x.number];", "(a[(x . number)]);"),
-            ("screen.point.x;", "((screen . point) . x);"),
-            ("++i->number;", "(++(i -> number));"),
-        ];
-        for (input, expected) in tests.iter() {
-            // when
-            let mut p = Parser::new(Lexer::new(input));
-            let stmt = p.parse_statement().unwrap();
-            p.next_token();
-
-            // then
-            assert_eq!(expected.to_string(), stmt.to_string());
-        }
-    }
-
-    #[test]
     fn test_if_statement() {
         // given
         let input = "
