@@ -101,6 +101,22 @@ impl Lexer {
 
     pub(crate) fn next_token(&mut self) -> token::Token {
         self.skip_whitespace();
+        if self.ch == '#' {
+            // TODO
+            self.read_char();
+            while self.ch != '\r' && self.ch != '\n' {
+                self.read_char();
+            }
+            self.skip_whitespace();
+        }
+        if self.ch == '/' && self.peek_char() == '/' {
+            self.read_char();
+            self.read_char();
+            while self.ch != '\r' && self.ch != '\n' {
+                self.read_char();
+            }
+            self.skip_whitespace();
+        }
         let (tok, skip_read) = match self.ch {
             ',' => (
                 token::Token {
@@ -425,11 +441,15 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input = "int five = 5;
+        let input = "
+#include <stdio.h>
+int five = 5;
 
 int add(int x, int y) {
     return x + y;
 }
+
+// comment
 
 int main(int argc, char *argv[]) {
     int ten = 10;
