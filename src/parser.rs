@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod parser_for_external_items;
 mod parser_for_statemens;
 mod parser_for_expressions;
