@@ -73,7 +73,7 @@ impl Parser {
         let type_dec = if self.cur_token.token_type == TokenType::Struct {
             self.parse_struct_type()?
         } else {
-            let t = TypeRef::Named(self.cur_token.literal.to_string());
+            let t = TypeRef::Named(self.cur_token.literal());
             self.next_token();
             t
         };
