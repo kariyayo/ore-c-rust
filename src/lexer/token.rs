@@ -149,4 +149,12 @@ pub fn lookup_ident(s: &str) -> TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
+    pub row: usize,
+    pub col: usize,
+}
+
+impl Token {
+    pub fn new() -> Token {
+        Token { token_type: TokenType::Eof, literal: "".to_string(), row: 0, col: 0 }
+    }
 }

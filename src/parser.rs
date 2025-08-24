@@ -31,8 +31,8 @@ impl Parser {
     pub(crate) fn new(l: Lexer) -> Parser {
         let mut p = Parser {
             l: l,
-            cur_token: Token { token_type: TokenType::Eof, literal: "".to_string() },
-            peek_token: Token { token_type: TokenType::Eof, literal: "".to_string() },
+            cur_token: Token::new(),
+            peek_token: Token::new(),
             errors: vec![],
         };
 
