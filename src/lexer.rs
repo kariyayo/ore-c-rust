@@ -7,6 +7,9 @@ pub(crate) struct Lexer {
     position: usize,      // 現在の位置
     read_position: usize, // これから読み込む位置（現在の文字の次）
     ch: char,             // 何も読んでない or ファイルの終わりを示す場合はNULL文字になる
+    row: usize,
+    col: usize,
+    before_token_end_col: usize,
 }
 
 impl Lexer {
@@ -16,6 +19,9 @@ impl Lexer {
             position: 0,
             read_position: 0,
             ch: '\u{0}',
+            row: 1,
+            col: 0,
+            before_token_end_col: 1,
         };
         l.read_char();
         return l;
@@ -33,10 +39,17 @@ impl Lexer {
         }
         self.position = self.read_position;
         self.read_position += 1;
+        self.col += 1;
     }
 
     fn skip_whitespace(&mut self) {
         while self.ch == ' ' || self.ch == '\t' || self.ch == '\n' || self.ch == '\r' {
+            self.before_token_end_col += 1;
+            if self.ch == '\n' || self.ch == '\r' {
+                self.row += 1;
+                self.col = 0;
+                self.before_token_end_col = 1;
+            }
             self.read_char();
         }
     }
@@ -122,6 +135,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Comma,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -129,6 +144,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Semicolon,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -136,6 +153,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Colon,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -146,6 +165,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Eq,
                             literal: "==".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -154,6 +175,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Assign,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -166,6 +189,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::NotEq,
                             literal: "!=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -174,6 +199,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Bang,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -186,6 +213,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Increment,
                             literal: "++".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -195,6 +224,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::PlusAssign,
                             literal: "+=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -203,6 +234,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Plus,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -215,6 +248,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Decrement,
                             literal: "--".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -224,6 +259,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::MinusAssign,
                             literal: "-=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -233,6 +270,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Arrow,
                             literal: "->".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -241,6 +280,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Minus,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -253,6 +294,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::AsteriskAssign,
                             literal: "*=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -261,6 +304,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Asterisk,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -273,6 +318,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::SlashAssign,
                             literal: "/=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -281,6 +328,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Slash,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -293,6 +342,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::PercentAssign,
                             literal: "%=".to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -301,6 +352,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Percent,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -310,6 +363,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Ampersand,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -317,6 +372,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Lt,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -324,6 +381,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Gt,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -331,6 +390,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Lparem,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -338,6 +399,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Rparem,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -345,6 +408,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Lbrace,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -352,6 +417,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Rbrace,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -359,6 +426,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Lbracket,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -366,6 +435,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Rbracket,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -373,6 +444,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Dot,
                     literal: self.ch.to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -380,6 +453,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Eof,
                     literal: "".to_string(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -387,6 +462,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::Character,
                     literal: self.read_character_literal(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -394,6 +471,8 @@ impl Lexer {
                 token::Token {
                     token_type: TokenType::String,
                     literal: self.read_string_literal(),
+                    row: self.row,
+                    col: self.before_token_end_col,
                 },
                 false,
             ),
@@ -405,6 +484,8 @@ impl Lexer {
                         token::Token {
                             token_type,
                             literal,
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         true,
                     )
@@ -414,6 +495,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Integer,
                             literal,
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         true,
                     )
@@ -422,6 +505,8 @@ impl Lexer {
                         token::Token {
                             token_type: TokenType::Illegal,
                             literal: self.ch.to_string(),
+                            row: self.row,
+                            col: self.before_token_end_col,
                         },
                         false,
                     )
@@ -431,6 +516,7 @@ impl Lexer {
         if !skip_read {
             self.read_char();
         }
+        self.before_token_end_col = self.col;
         return tok;
     }
 }
@@ -441,8 +527,8 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input = "
-#include <stdio.h>
+        let input = 
+"#include <stdio.h>
 int five = 5;
 
 int add(int x, int y) {
@@ -501,184 +587,185 @@ p->x;
 \" escape \\\" \\n \";
 ";
         let tests = vec![
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "five"),
-            (TokenType::Assign, "="),
-            (TokenType::Integer, "5"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "add"),
-            (TokenType::Lparem, "("),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "x"),
-            (TokenType::Comma, ","),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "y"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Return, "return"),
-            (TokenType::Ident, "x"),
-            (TokenType::Plus, "+"),
-            (TokenType::Ident, "y"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "main"),
-            (TokenType::Lparem, "("),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "argc"),
-            (TokenType::Comma, ","),
-            (TokenType::Char, "char"),
-            (TokenType::Asterisk, "*"),
-            (TokenType::Ident, "argv"),
-            (TokenType::Lbracket, "["),
-            (TokenType::Rbracket, "]"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "ten"),
-            (TokenType::Assign, "="),
-            (TokenType::Integer, "10"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Int, "int"),
-            (TokenType::Ident, "result"),
-            (TokenType::Assign, "="),
-            (TokenType::Ident, "add"),
-            (TokenType::Lparem, "("),
-            (TokenType::Ident, "five"),
-            (TokenType::Comma, ","),
-            (TokenType::Ident, "ten"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::Integer, "10"),
-            (TokenType::Eq, "=="),
-            (TokenType::Integer, "10"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Integer, "10"),
-            (TokenType::NotEq, "!="),
-            (TokenType::Integer, "9"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Increment, "++"),
-            (TokenType::Ident, "a1"),
-            (TokenType::Bang, "!"),
-            (TokenType::Minus, "-"),
-            (TokenType::Slash, "/"),
-            (TokenType::Asterisk, "*"),
-            (TokenType::Percent, "%"),
-            (TokenType::Ampersand, "&"),
-            (TokenType::Integer, "5"),
-            (TokenType::Ident, "x"),
-            (TokenType::Assign, "="),
-            (TokenType::Integer, "10"),
-            (TokenType::Ident, "a"),
-            (TokenType::PlusAssign, "+="),
-            (TokenType::Integer, "5"),
-            (TokenType::Ident, "a"),
-            (TokenType::MinusAssign, "-="),
-            (TokenType::Integer, "5"),
-            (TokenType::Ident, "a"),
-            (TokenType::AsteriskAssign, "*="),
-            (TokenType::Integer, "5"),
-            (TokenType::Ident, "a"),
-            (TokenType::SlashAssign, "/="),
-            (TokenType::Integer, "5"),
-            (TokenType::Ident, "a"),
-            (TokenType::PercentAssign, "%="),
-            (TokenType::Integer, "5"),
-            (TokenType::If, "if"),
-            (TokenType::Lparem, "("),
-            (TokenType::Integer, "5"),
-            (TokenType::Lt, "<"),
-            (TokenType::Integer, "10"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Return, "return"),
-            (TokenType::Integer, "1"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::Else, "else"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Return, "return"),
-            (TokenType::Integer, "0"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::Switch, "switch"),
-            (TokenType::Lparem, "("),
-            (TokenType::Ident, "x"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Case, "case"),
-            (TokenType::Integer, "1"),
-            (TokenType::Colon, ":"),
-            (TokenType::Return, "return"),
-            (TokenType::Integer, "1"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Default, "default"),
-            (TokenType::Colon, ":"),
-            (TokenType::Return, "return"),
-            (TokenType::Integer, "0"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::While, "while"),
-            (TokenType::Lparem, "("),
-            (TokenType::Ident, "x"),
-            (TokenType::Lt, "<"),
-            (TokenType::Integer, "10"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Continue, "continue"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Do, "do"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Return, "return"),
-            (TokenType::Integer, "1"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::While, "while"),
-            (TokenType::Lparem, "("),
-            (TokenType::Ident, "x"),
-            (TokenType::Lt, "<"),
-            (TokenType::Integer, "10"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::For, "for"),
-            (TokenType::Lparem, "("),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Rparem, ")"),
-            (TokenType::Increment, "++"),
-            (TokenType::Ident, "a"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Lbracket, "["),
-            (TokenType::Integer, "1"),
-            (TokenType::Comma, ","),
-            (TokenType::Integer, "2"),
-            (TokenType::Rbracket, "]"),
-            (TokenType::Struct, "struct"),
-            (TokenType::Ident, "a"),
-            (TokenType::Lbrace, "{"),
-            (TokenType::Rbrace, "}"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Ident, "point"),
-            (TokenType::Dot, "."),
-            (TokenType::Ident, "x"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Ident, "p"),
-            (TokenType::Arrow, "->"),
-            (TokenType::Ident, "x"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Character, "A"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::Character, "\\'"), // -> '\''
-            (TokenType::Semicolon, ";"),
-            (TokenType::Character, "\\n"), // -> '\n'
-            (TokenType::Semicolon, ";"),
-            (TokenType::Character, "\\\\"), // -> '\\'
-            (TokenType::Semicolon, ";"),
-            (TokenType::String, "Hello, World!"),
-            (TokenType::Semicolon, ";"),
-            (TokenType::String, " escape \\\" \\n "), // -> " escape \" \n"
-            (TokenType::Semicolon, ";"),
+            // (TokenType, "literal", row, col)
+            (TokenType::Int, "int", 2, 1),
+            (TokenType::Ident, "five", 2, 5),
+            (TokenType::Assign, "=", 2, 10),
+            (TokenType::Integer, "5", 2, 12),
+            (TokenType::Semicolon, ";", 2, 13),
+            (TokenType::Int, "int", 4, 1),
+            (TokenType::Ident, "add", 4, 5),
+            (TokenType::Lparem, "(", 4, 8),
+            (TokenType::Int, "int", 4, 9),
+            (TokenType::Ident, "x", 4, 13),
+            (TokenType::Comma, ",", 4, 14),
+            (TokenType::Int, "int", 4, 16),
+            (TokenType::Ident, "y", 4, 20),
+            (TokenType::Rparem, ")", 4, 21),
+            (TokenType::Lbrace, "{", 4, 23),
+            (TokenType::Return, "return", 5, 5),
+            (TokenType::Ident, "x", 5, 12),
+            (TokenType::Plus, "+", 5, 14),
+            (TokenType::Ident, "y", 5, 16),
+            (TokenType::Semicolon, ";", 5, 17),
+            (TokenType::Rbrace, "}", 6, 1),
+            (TokenType::Int, "int", 10, 1),
+            (TokenType::Ident, "main", 10, 5),
+            (TokenType::Lparem, "(", 10, 9),
+            (TokenType::Int, "int", 10, 10),
+            (TokenType::Ident, "argc", 10, 14),
+            (TokenType::Comma, ",", 10, 18),
+            (TokenType::Char, "char", 10, 20),
+            (TokenType::Asterisk, "*", 10, 25),
+            (TokenType::Ident, "argv", 10, 26),
+            (TokenType::Lbracket, "[", 10, 30),
+            (TokenType::Rbracket, "]", 10, 31),
+            (TokenType::Rparem, ")", 10, 32),
+            (TokenType::Lbrace, "{", 10, 34),
+            (TokenType::Int, "int", 11, 5),
+            (TokenType::Ident, "ten", 11, 9),
+            (TokenType::Assign, "=", 11, 13),
+            (TokenType::Integer, "10", 11, 15),
+            (TokenType::Semicolon, ";", 11, 17),
+            (TokenType::Int, "int", 12, 5),
+            (TokenType::Ident, "result", 12, 9),
+            (TokenType::Assign, "=", 12, 16),
+            (TokenType::Ident, "add", 12, 18),
+            (TokenType::Lparem, "(", 12, 21),
+            (TokenType::Ident, "five", 12, 22),
+            (TokenType::Comma, ",", 12, 26),
+            (TokenType::Ident, "ten", 12, 28),
+            (TokenType::Rparem, ")", 12, 31),
+            (TokenType::Semicolon, ";", 12, 32),
+            (TokenType::Rbrace, "}", 13, 1),
+            (TokenType::Integer, "10", 15, 1),
+            (TokenType::Eq, "==", 15, 4),
+            (TokenType::Integer, "10", 15, 7),
+            (TokenType::Semicolon, ";", 15, 9),
+            (TokenType::Integer, "10", 16, 1),
+            (TokenType::NotEq, "!=", 16, 4),
+            (TokenType::Integer, "9", 16, 7),
+            (TokenType::Semicolon, ";", 16, 8),
+            (TokenType::Increment, "++", 18, 1),
+            (TokenType::Ident, "a1", 18, 3),
+            (TokenType::Bang, "!", 20, 1),
+            (TokenType::Minus, "-", 20, 2),
+            (TokenType::Slash, "/", 20, 3),
+            (TokenType::Asterisk, "*", 20, 4),
+            (TokenType::Percent, "%", 20, 5),
+            (TokenType::Ampersand, "&", 20, 6),
+            (TokenType::Integer, "5", 20, 7),
+            (TokenType::Ident, "x", 22, 1),
+            (TokenType::Assign, "=", 22, 3),
+            (TokenType::Integer, "10", 22, 5),
+            (TokenType::Ident, "a", 23, 1),
+            (TokenType::PlusAssign, "+=", 23, 3),
+            (TokenType::Integer, "5", 23, 6),
+            (TokenType::Ident, "a", 24, 1),
+            (TokenType::MinusAssign, "-=", 24, 3),
+            (TokenType::Integer, "5", 24, 6),
+            (TokenType::Ident, "a", 25, 1),
+            (TokenType::AsteriskAssign, "*=", 25, 3),
+            (TokenType::Integer, "5", 25, 6),
+            (TokenType::Ident, "a", 26, 1),
+            (TokenType::SlashAssign, "/=", 26, 3),
+            (TokenType::Integer, "5", 26, 6),
+            (TokenType::Ident, "a", 27, 1),
+            (TokenType::PercentAssign, "%=", 27, 3),
+            (TokenType::Integer, "5", 27, 6),
+            (TokenType::If, "if", 29, 1),
+            (TokenType::Lparem, "(", 29, 4),
+            (TokenType::Integer, "5", 29, 5),
+            (TokenType::Lt, "<", 29, 7),
+            (TokenType::Integer, "10", 29, 9),
+            (TokenType::Rparem, ")", 29, 11),
+            (TokenType::Lbrace, "{", 29, 13),
+            (TokenType::Return, "return", 30, 5),
+            (TokenType::Integer, "1", 30, 12),
+            (TokenType::Semicolon, ";", 30, 13),
+            (TokenType::Rbrace, "}", 31, 1),
+            (TokenType::Else, "else", 31, 3),
+            (TokenType::Lbrace, "{", 31, 8),
+            (TokenType::Return, "return", 32, 5),
+            (TokenType::Integer, "0", 32, 12),
+            (TokenType::Semicolon, ";", 32, 13),
+            (TokenType::Rbrace, "}", 33, 1),
+            (TokenType::Switch, "switch", 34, 1),
+            (TokenType::Lparem, "(", 34, 8),
+            (TokenType::Ident, "x", 34, 9),
+            (TokenType::Rparem, ")", 34, 10),
+            (TokenType::Lbrace, "{", 34, 12),
+            (TokenType::Case, "case", 35, 5),
+            (TokenType::Integer, "1", 35, 10),
+            (TokenType::Colon, ":", 35, 11),
+            (TokenType::Return, "return", 36, 9),
+            (TokenType::Integer, "1", 36, 16),
+            (TokenType::Semicolon, ";", 36, 17),
+            (TokenType::Default, "default", 37, 5),
+            (TokenType::Colon, ":", 37, 12),
+            (TokenType::Return, "return", 38, 9),
+            (TokenType::Integer, "0", 38, 16),
+            (TokenType::Semicolon, ";", 38, 17),
+            (TokenType::Rbrace, "}", 39, 1),
+            (TokenType::While, "while", 41, 1),
+            (TokenType::Lparem, "(", 41, 7),
+            (TokenType::Ident, "x", 41, 8),
+            (TokenType::Lt, "<", 41, 10),
+            (TokenType::Integer, "10", 41, 12),
+            (TokenType::Rparem, ")", 41, 14),
+            (TokenType::Continue, "continue", 41, 16),
+            (TokenType::Semicolon, ";", 41, 24),
+            (TokenType::Do, "do", 43, 1),
+            (TokenType::Lbrace, "{", 43, 4),
+            (TokenType::Return, "return", 44, 5),
+            (TokenType::Integer, "1", 44, 12),
+            (TokenType::Semicolon, ";", 44, 13),
+            (TokenType::Rbrace, "}", 45, 1),
+            (TokenType::While, "while", 45, 3),
+            (TokenType::Lparem, "(", 45, 9),
+            (TokenType::Ident, "x", 45, 10),
+            (TokenType::Lt, "<", 45, 12),
+            (TokenType::Integer, "10", 45, 14),
+            (TokenType::Rparem, ")", 45, 16),
+            (TokenType::Semicolon, ";", 45, 17),
+            (TokenType::For, "for", 47, 1),
+            (TokenType::Lparem, "(", 47, 5),
+            (TokenType::Semicolon, ";", 47, 6),
+            (TokenType::Semicolon, ";", 47, 7),
+            (TokenType::Rparem, ")", 47, 8),
+            (TokenType::Increment, "++", 47, 10),
+            (TokenType::Ident, "a", 47, 12),
+            (TokenType::Semicolon, ";", 47, 13),
+            (TokenType::Lbracket, "[", 48, 1),
+            (TokenType::Integer, "1", 48, 2),
+            (TokenType::Comma, ",", 48, 3),
+            (TokenType::Integer, "2", 48, 5),
+            (TokenType::Rbracket, "]", 48, 6),
+            (TokenType::Struct, "struct", 49, 1),
+            (TokenType::Ident, "a", 49, 8),
+            (TokenType::Lbrace, "{", 49, 10),
+            (TokenType::Rbrace, "}", 49, 11),
+            (TokenType::Semicolon, ";", 49, 12),
+            (TokenType::Ident, "point", 50, 1),
+            (TokenType::Dot, ".", 50, 6),
+            (TokenType::Ident, "x", 50, 7),
+            (TokenType::Semicolon, ";", 50, 8),
+            (TokenType::Ident, "p", 51, 1),
+            (TokenType::Arrow, "->", 51, 2),
+            (TokenType::Ident, "x", 51, 4),
+            (TokenType::Semicolon, ";", 51, 5),
+            (TokenType::Character, "A", 52, 1),
+            (TokenType::Semicolon, ";", 52, 4),
+            (TokenType::Character, "\\'", 53, 1), // -> '\''
+            (TokenType::Semicolon, ";", 53, 5),
+            (TokenType::Character, "\\n", 54, 1), // -> '\n'
+            (TokenType::Semicolon, ";", 54, 5),
+            (TokenType::Character, "\\\\", 55, 1), // -> '\\'
+            (TokenType::Semicolon, ";", 55, 5),
+            (TokenType::String, "Hello, World!", 56, 1),
+            (TokenType::Semicolon, ";", 56, 16),
+            (TokenType::String, " escape \\\" \\n ", 57, 1), // -> " escape \" \n"
+            (TokenType::Semicolon, ";", 57, 17),
         ];
 
         let mut l = Lexer::new(input);
@@ -691,6 +778,14 @@ p->x;
                 i, tok.literal
             );
             assert_eq!(tok.literal, t.1);
+            assert_eq!(tok.row, t.2,
+                "index={}, actual_row='{}'",
+                i, tok.row
+            );
+            assert_eq!(tok.col, t.3,
+                "index={}, actual_literal='{}', actual_col='{}'",
+                i, tok.literal, tok.col
+            );
         }
     }
 }
