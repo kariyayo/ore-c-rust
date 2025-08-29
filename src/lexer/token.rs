@@ -148,5 +148,21 @@ pub fn lookup_ident(s: &str) -> TokenType {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Token {
     pub token_type: TokenType,
-    pub literal: String,
+    pub raw_string: String,
+    pub row: usize,
+    pub col: usize,
+}
+
+impl Token {
+    pub fn new() -> Token {
+        Token { token_type: TokenType::Eof, raw_string: "".to_string(), row: 0, col: 0 }
+    }
+
+    pub fn literal(&self) -> String {
+        match self.token_type {
+            TokenType::Character => self.raw_string.trim_matches('\'').parse().unwrap(),
+            TokenType::String => self.raw_string.trim_matches('"').parse().unwrap(),
+            _ => self.raw_string.clone(),
+        }
+    }
 }

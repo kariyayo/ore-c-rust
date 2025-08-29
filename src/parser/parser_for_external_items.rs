@@ -26,7 +26,7 @@ impl Parser {
                             // 省略されている場合は、int型とする
                             TypeRef::Named("int".to_string())
                         } else {
-                            let tmp = TypeRef::Named(self.cur_token.literal.to_string());
+                            let tmp = TypeRef::Named(self.cur_token.literal());
                             self.next_token();
                             tmp
                         }
@@ -58,7 +58,7 @@ impl Parser {
         if self.cur_token.token_type != TokenType::Ident {
             return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
         }
-        let name = self.cur_token.literal.clone();
+        let name = self.cur_token.literal();
 
         self.next_token(); // cur_token is Lparam
         let parameters = self.parse_function_params()?;

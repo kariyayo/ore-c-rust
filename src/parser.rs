@@ -31,8 +31,8 @@ impl Parser {
     pub(crate) fn new(l: Lexer) -> Parser {
         let mut p = Parser {
             l: l,
-            cur_token: Token { token_type: TokenType::Eof, literal: "".to_string() },
-            peek_token: Token { token_type: TokenType::Eof, literal: "".to_string() },
+            cur_token: Token::new(),
+            peek_token: Token::new(),
             errors: vec![],
         };
 
@@ -67,7 +67,7 @@ impl Parser {
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.clone();
         self.peek_token = self.l.next_token();
-        println!("#### current token_type:{:?}, literal:{}, peek token_type:{:?} ####", self.cur_token.token_type, self.cur_token.literal, self.peek_token.token_type);
+        println!("#### current token_type:{:?}, literal:{}, peek token_type:{:?} ####", self.cur_token.token_type, self.cur_token.literal(), self.peek_token.token_type);
     }
 
     fn parse_struct_type(&mut self) -> Result<ast::TypeRef> {
@@ -78,7 +78,7 @@ impl Parser {
 
         let mut tag_name: Option<String> = None;
         if self.cur_token.token_type != TokenType::Lbrace {
-            tag_name = Some(self.cur_token.literal.clone());
+            tag_name = Some(self.cur_token.literal());
             self.next_token();
         }
 
@@ -126,7 +126,7 @@ impl Parser {
                 if self.cur_token.token_type == TokenType::Struct {
                     self.parse_struct_type()?
                 } else {
-                    let t = ast::TypeRef::Named(self.cur_token.literal.clone());
+                    let t = ast::TypeRef::Named(self.cur_token.literal());
                     self.next_token();
                     t
                 };
@@ -140,7 +140,7 @@ impl Parser {
             if self.cur_token.token_type != TokenType::Ident {
                 return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
-            let name = self.cur_token.literal.clone();
+            let name = self.cur_token.literal();
 
             // array?
             while self.peek_token.token_type == TokenType::Lbracket {
@@ -188,7 +188,7 @@ impl Parser {
             if self.cur_token.token_type != TokenType::Ident {
                 return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
             }
-            let name = self.cur_token.literal.clone();
+            let name = self.cur_token.literal();
 
             // array?
             while self.peek_token.token_type == TokenType::Lbracket {
@@ -202,9 +202,9 @@ impl Parser {
                     if self.cur_token.token_type != TokenType::Integer {
                         return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Integer, got {:?}", self.cur_token.token_type)] });
                     }
-                    let size = self.cur_token.literal
+                    let size = self.cur_token.literal()
                         .parse::<u32>()
-                        .map_err(|_| Error { errors: vec![format!("[parse_declarators] failed to parse integer size from {:?}", self.cur_token.literal)] })?;
+                        .map_err(|_| Error { errors: vec![format!("[parse_declarators] failed to parse integer size from {:?}", self.cur_token.literal())] })?;
                     type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: Some(size) };
                     self.next_token();
                     if self.cur_token.token_type != TokenType::Rbracket {

@@ -196,25 +196,23 @@ impl Parser {
     }
 
     pub(super) fn parse_identifier(&self) -> Result<Expression> {
-        return Ok(Expression::Identifier(self.cur_token.literal.clone()));
+        return Ok(Expression::Identifier(self.cur_token.literal()));
     }
 
     pub(super) fn parse_integer_literal(&self) -> Result<Expression> {
-        return self.cur_token.literal.parse()
+        return self.cur_token.literal().parse()
             .map(|value| Expression::Int(value))
             .map_err(|_| Error { errors: vec!["[parse_integer_literal] parse int error".to_string()] });
     }
 
     pub(super) fn parse_character_literal(&self) -> Result<Expression> {
-        return self.cur_token.literal.parse()
+        return self.cur_token.literal().parse()
             .map(|value| Expression::CharacterLiteral(value))
             .map_err(|_| Error { errors: vec![format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()] });
     }
 
     pub(super) fn parse_string_literal(&self) -> Result<Expression> {
-        return self.cur_token.literal.parse()
-            .map(|value| Expression::StringLiteral(value))
-            .map_err(|_| Error { errors: vec!["[parse_string_literal] parse string error".to_string()] });
+        return Ok(Expression::StringLiteral(self.cur_token.literal()));
     }
 
     pub(super) fn parse_grouped_expression(&mut self) -> Result<Expression> {
@@ -250,7 +248,7 @@ impl Parser {
 
     // !, -, ++, --, *, & の前置演算子をパースする
     pub(super) fn parse_prefix_expression(&mut self) -> Result<Expression> {
-        let operator = self.cur_token.literal.clone();
+        let operator = self.cur_token.literal();
         self.next_token();
         return self.parse_expression(ExpressionPrecedence::Prefix)
             .map(|right|
@@ -302,7 +300,7 @@ impl Parser {
     }
 
     pub(super) fn parse_infix_expression(&mut self, left: Expression) -> Result<Expression> {
-        let operator = self.cur_token.literal.clone();
+        let operator = self.cur_token.literal();
         let operator_precedence = self.cur_precedence();
         self.next_token();
         return self.parse_expression(operator_precedence)
@@ -317,7 +315,7 @@ impl Parser {
 
     // ++, -- の後置演算子をパースする
     pub(super) fn parse_postfix_expression(&mut self, left: Expression) -> Expression {
-        let operator = self.cur_token.literal.clone();
+        let operator = self.cur_token.literal();
         return Expression::PostfixExpression {
             operator,
             left: Box::new(left),
