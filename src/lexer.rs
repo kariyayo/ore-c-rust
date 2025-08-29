@@ -42,7 +42,11 @@ impl Lexer {
 
     fn skip_whitespace(&mut self) {
         while self.ch == ' ' || self.ch == '\t' || self.ch == '\n' || self.ch == '\r' {
-            if self.ch == '\n' || self.ch == '\r' {
+            if self.ch == '\r' && self.peek_char() == '\n' {
+                self.read_char();
+                self.row += 1;
+                self.col = 0;
+            } else if self.ch == '\n' || self.ch == '\r' {
                 self.row += 1;
                 self.col = 0;
             }
