@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use crate::parser::ast::{Expression, ExternalItem, Parameter, Program, Statement, TypeRef};
 
@@ -6,6 +7,14 @@ use crate::parser::ast::{Expression, ExternalItem, Parameter, Program, Statement
 pub struct Error {
     errors: Vec<String>,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+impl core::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
