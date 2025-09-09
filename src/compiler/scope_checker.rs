@@ -160,9 +160,9 @@ fn check_statement(
     scope: &mut LocalScope,
     stmt: &Statement,
 ) -> Vec<Result<()>> {
-    println!("@@@@ check_statement ::: local_scope: {:?}", scope);
     match stmt {
         Statement::Return(expression) => {
+            println!("@@@@ check_statement (Return) ::: local_scope: {:?}", scope);
             if let Some(exp) = expression {
                 vec![check_expression(scope, exp)]
             } else {
@@ -170,12 +170,15 @@ fn check_statement(
             }
         }
         Statement::Break => {
+            println!("@@@@ check_statement (Break) ::: local_scope: {:?}", scope);
             vec![Ok(())]
         }
         Statement::Continue => {
+            println!("@@@@ check_statement (Continue) ::: local_scope: {:?}", scope);
             vec![Ok(())]
         }
         Statement::VarDecl(items) => {
+            println!("@@@@ check_statement (VarDecl) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
             for (_, decl) in items {
                 if scope.find(decl.name.as_str()) {
@@ -187,6 +190,7 @@ fn check_statement(
             results
         },
         Statement::Block(statements) => {
+            println!("@@@@ check_statement (Block) ::: local_scope: {:?}", scope);
             let mut local_scope = LocalScope { parent: Some(&scope), entities: HashSet::new() };
             statements.iter().map(|stmt| check_statement(functions, &mut local_scope, stmt)).flatten().collect()
         },
@@ -243,7 +247,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_1() {
+    fn test_variable_duplicated() {
         // given
         let input = "
 int x = 10;
@@ -273,7 +277,7 @@ struct rect foo(point p) {
     }
 
     #[test]
-    fn test_2() {
+    fn test_not_defined() {
         // given
         let input = "
 int x = 10;
