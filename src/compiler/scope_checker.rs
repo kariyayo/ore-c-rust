@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use crate::parser::ast::{Expression, ExternalItem, Parameter, Program, Statement, TypeRef};
 
@@ -6,6 +7,14 @@ use crate::parser::ast::{Expression, ExternalItem, Parameter, Program, Statement
 pub struct Error {
     errors: Vec<String>,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+impl core::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -65,7 +74,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
     for item in &ast.external_items {
         match item {
             ExternalItem::Struct(TypeRef::Struct { tag_name: Some(tag_name), members }) => {
-                types.put(tag_name);
+                let s = format!("struct {}", tag_name);
+                types.put(s.as_str());
             },
             ExternalItem::VarDecl(declarators) => {
                 for (_, declarator) in declarators {
@@ -86,7 +96,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         .filter_map(|item| {
             if let ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } = item {
                 Some(check_function(
-                    &types,
+                    // &types,
                     &functions,
                     &global_scope,
                     return_type_dec,
@@ -107,7 +117,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
 }
 
 fn check_function(
-    types: &Types,
+    // types: &Types,
     functions: &Functions,
     global_scope: &LocalScope,
     return_type_dec: &TypeRef,
@@ -116,34 +126,77 @@ fn check_function(
     body: &Option<Box<Statement>>,
 ) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
-    println!("@@@@ check_function ::: return_type_dec: {:?}, name: {:?}, parameters: {:?}", return_type_dec, name, parameters);
-    if !types.find(&return_type_dec.type_name()) {
-        results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec)] });
-        return results;
-    }
+    println!("@@@@ check_function ::: return_type_dec: {:?}, name: {:?}, parameters: {:?}", return_type_dec.type_name(), name, parameters);
+
+    // スコープチェックでは型の確認は不要
+    // // check return type
+    // if !types.find(&return_type_dec.type_name()) {
+    //     results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec.type_name())] });
+    //     return results;
+    // }
+
+    // check parameters
     let mut local_scope = LocalScope { parent: Some(&global_scope), entities: HashSet::new() };
     for p in parameters {
+        if local_scope.find(name) {
+            return vec![Error{ errors: vec![format!("parameter `{}` is duplicated", name)] }]
+        }
         local_scope.put(p.name.as_str());
     }
-    println!("@@@@ check_function ::: local_scope: {:?}", local_scope);
-    let result: Result<()> = if let Some(stmt) = body {
-        match stmt.as_ref() {
-            Statement::Return(expression) => todo!(),
-            Statement::Break => Ok(()),
-            Statement::Continue => Ok(()),
-            Statement::VarDecl(items) => todo!(),
-            Statement::Block(statements) => todo!(),
-            Statement::If { condition, consequence, alternative } => todo!(),
-            Statement::Switch { condition, switch_block } => todo!(),
-            Statement::While { condition, body } => todo!(),
-            Statement::DoWhile { body, condition } => todo!(),
-            Statement::For { init, condition, post, body } => todo!(),
-            Statement::ExpressionStatement(expression) => todo!(),
-        }
-    } else {
-        Ok(())
-    };
+
+    // check function body
+    if let Some(stmt) = body {
+        let mut es: Vec<Error> = check_statement(functions, &mut local_scope, stmt).into_iter()
+            .filter_map(|a| a.err())
+            .collect();
+        results.append(&mut es);
+    }
     results
+}
+
+fn check_statement(
+    // types: &Types,
+    functions: &Functions,
+    scope: &mut LocalScope,
+    stmt: &Statement,
+) -> Vec<Result<()>> {
+    println!("@@@@ check_statement ::: local_scope: {:?}", scope);
+    match stmt {
+        Statement::Return(expression) => {
+            if let Some(exp) = expression {
+                vec![check_expression(scope, exp)]
+            } else {
+                vec![Ok(())]
+            }
+        }
+        Statement::Break => {
+            vec![Ok(())]
+        }
+        Statement::Continue => {
+            vec![Ok(())]
+        }
+        Statement::VarDecl(items) => {
+            let mut results: Vec<Result<()>> = vec![];
+            for (_, decl) in items {
+                if scope.find(decl.name.as_str()) {
+                    results.push(Err(Error { errors: vec![format!("variable `{}` is duplicated", decl.name)] }));
+                } else {
+                    scope.put(decl.name.as_str());
+                }
+            }
+            results
+        },
+        Statement::Block(statements) => {
+            let mut local_scope = LocalScope { parent: Some(&scope), entities: HashSet::new() };
+            statements.iter().map(|stmt| check_statement(functions, &mut local_scope, stmt)).flatten().collect()
+        },
+        Statement::If { condition, consequence, alternative } => todo!(),
+        Statement::Switch { condition, switch_block } => todo!(),
+        Statement::While { condition, body } => todo!(),
+        Statement::DoWhile { body, condition } => todo!(),
+        Statement::For { init, condition, post, body } => todo!(),
+        Statement::ExpressionStatement(expression) => vec![check_expression(scope, expression)],
+    }
 }
 
 fn check_expression(scope: &LocalScope, exp: &Expression) -> Result<()> {
@@ -151,10 +204,19 @@ fn check_expression(scope: &LocalScope, exp: &Expression) -> Result<()> {
         Expression::Int(_) => Ok(()),
         Expression::CharacterLiteral(_) => Ok(()),
         Expression::StringLiteral(_) => Ok(()),
-        Expression::Identifier(name) => todo!(),
-        Expression::PrefixExpression { operator: _, right } => todo!(),
-        Expression::InfixExpression { operator: _, left, right } => todo!(),
-        Expression::PostfixExpression { operator: _, left } => todo!(),
+        Expression::Identifier(name) => {
+            if !scope.find(name) {
+                Err(Error { errors: vec![format!("variable `{}` is not defined", name)] })
+            } else {
+                Ok(())
+            }
+        },
+        Expression::PrefixExpression { operator: _, right } => check_expression(scope, right),
+        Expression::InfixExpression { operator: _, left, right } => {
+            check_expression(scope, left)?;
+            check_expression(scope, right)
+        },
+        Expression::PostfixExpression { operator: _, left } => check_expression(scope, left),
         Expression::FunctionCallExpression { function_name, arguments } => todo!(),
         Expression::InitializerExpression { elements } => todo!(),
         Expression::IndexExpression { left, index } => todo!(),
@@ -190,8 +252,9 @@ struct point {
     int y;
 };
 struct rect foo(point p) {
-    struct rect r = {p.x, p.y, 10, 10};
-    return r;
+    int p = 1;
+    struct point pp = {p.x + 10, p.y + 10};
+    return pp;
 }
 ";
         let mut parser = Parser::new(Lexer::new(input));
@@ -203,7 +266,40 @@ struct rect foo(point p) {
         // then
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 1);
-            assert_eq!(true, errors[0].starts_with("return type is not defined"));
+            assert_eq!(true, errors[0].starts_with("variable `p` is duplicated"), "actual message: `{}`", errors[0]);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_2() {
+        // given
+        let input = "
+int x = 10;
+struct point {
+    int x;
+    int y;
+};
+struct point foo(point p) {
+    struct point pp = {p.x + 10, p.y + 10};
+    ++(foo.x);
+    (bar.x)--;
+    return hoge;
+}
+";
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_scope(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert_eq!(errors.len(), 3);
+            assert_eq!(true, errors[0].starts_with("variable `foo` is not defined"), "actual message: `{}`", errors[0]);
+            assert_eq!(true, errors[1].starts_with("variable `bar` is not defined"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[2].starts_with("variable `hoge` is not defined"), "actual message: `{}`", errors[2]);
         } else {
             assert!(false);
         }
