@@ -160,25 +160,22 @@ fn check_statement(
     scope: &mut LocalScope,
     stmt: &Statement,
 ) -> Vec<Result<()>> {
+    println!("@@@@ check_statement ::: local_scope: {:?}", scope);
     match stmt {
         Statement::Return(expression) => {
-            println!("@@@@ check_statement (Return) ::: local_scope: {:?}", scope);
             if let Some(exp) = expression {
-                vec![check_expression(scope, exp)]
+                vec![check_expression(functions, scope, exp)]
             } else {
                 vec![Ok(())]
             }
         }
         Statement::Break => {
-            println!("@@@@ check_statement (Break) ::: local_scope: {:?}", scope);
             vec![Ok(())]
         }
         Statement::Continue => {
-            println!("@@@@ check_statement (Continue) ::: local_scope: {:?}", scope);
             vec![Ok(())]
         }
         Statement::VarDecl(items) => {
-            println!("@@@@ check_statement (VarDecl) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
             for (_, decl) in items {
                 if scope.find(decl.name.as_str()) {
@@ -186,18 +183,19 @@ fn check_statement(
                 } else {
                     scope.put(decl.name.as_str());
                 }
+                decl.value.iter().for_each(|exp| {
+                    results.push(check_expression(functions, scope, exp));
+                });
             }
             results
         },
         Statement::Block(statements) => {
-            println!("@@@@ check_statement (Block) ::: local_scope: {:?}", scope);
             let mut local_scope = LocalScope { parent: Some(&scope), entities: HashSet::new() };
             statements.iter().map(|stmt| check_statement(functions, &mut local_scope, stmt)).flatten().collect()
         },
         Statement::If { condition, consequence, alternative } => {
-            println!("@@@@ check_statement (If) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
-            let condition_result = check_expression(scope, condition);
+            let condition_result = check_expression(functions, scope, condition);
             let mut consequence_result = check_statement(functions, scope, consequence);
             let mut alternative_result = alternative
                 .as_ref()
@@ -209,48 +207,48 @@ fn check_statement(
             results
         },
         Statement::Switch { condition, switch_block } => {
-            println!("@@@@ check_statement (Switch) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
-            results.push(check_expression(scope, condition));
+            results.push(check_expression(functions, scope, condition));
             for stmt in &switch_block.body {
                 results.append(&mut check_statement(functions, scope, &stmt));
             }
             results
         },
         Statement::While { condition, body } => {
-            println!("@@@@ check_statement (While) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
-            results.push(check_expression(scope, condition));
+            results.push(check_expression(functions, scope, condition));
             results.append(&mut check_statement(functions, scope, body));
             results
         },
         Statement::DoWhile { body, condition } => {
-            println!("@@@@ check_statement (DoWhile) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
             results.append(&mut check_statement(functions, scope, body));
-            results.push(check_expression(scope, condition));
+            results.push(check_expression(functions, scope, condition));
             results
         },
         Statement::For { init, condition, post, body } => {
-            println!("@@@@ check_statement (For) ::: local_scope: {:?}", scope);
             let mut results: Vec<Result<()>> = vec![];
             init.iter().for_each(|init_stmt| {
-                results.push(check_expression(scope, init_stmt));
+                results.push(check_expression(functions, scope, init_stmt));
             });
             condition.iter().for_each(|condition_stmt| {
-                results.push(check_expression(scope, condition_stmt));
+                results.push(check_expression(functions, scope, condition_stmt));
             });
             post.iter().for_each(|post_stmt| {
-                results.push(check_expression(scope, post_stmt));
+                results.push(check_expression(functions, scope, post_stmt));
             });
             results.append(&mut check_statement(functions, scope, body));
             results
         },
-        Statement::ExpressionStatement(expression) => vec![check_expression(scope, expression)],
+        Statement::ExpressionStatement(expression) => vec![check_expression(functions, scope, expression)],
     }
 }
 
-fn check_expression(scope: &LocalScope, exp: &Expression) -> Result<()> {
+fn check_expression(
+    functions: &Functions,
+    scope: &LocalScope,
+    exp: &Expression,
+) -> Result<()> {
     match exp {
         Expression::Int(_) => Ok(()),
         Expression::CharacterLiteral(_) => Ok(()),
@@ -262,21 +260,37 @@ fn check_expression(scope: &LocalScope, exp: &Expression) -> Result<()> {
                 Ok(())
             }
         },
-        Expression::PrefixExpression { operator: _, right } => check_expression(scope, right),
+        Expression::PrefixExpression { operator: _, right } => check_expression(functions, scope, right),
         Expression::InfixExpression { operator, left, right } => {
-            check_expression(scope, left)?;
+            check_expression(functions, scope, left)?;
 
             // 構造体のメンバーのチェックはscope_checkerの対象外とする
             if operator == "." || operator == "->" {
                 return Ok(());
             }
 
-            check_expression(scope, right)
+            check_expression(functions, scope, right)
         },
-        Expression::PostfixExpression { operator: _, left } => check_expression(scope, left),
-        Expression::FunctionCallExpression { function_name, arguments } => todo!(),
-        Expression::InitializerExpression { elements } => todo!(),
-        Expression::IndexExpression { left, index } => todo!(),
+        Expression::PostfixExpression { operator: _, left } => check_expression(functions, scope, left),
+        Expression::FunctionCallExpression { function_name, arguments } => {
+            if !functions.find(function_name) {
+                return Err(Error { errors: vec![format!("function `{}` is not defined", function_name)] });
+            }
+            for arg in arguments {
+                check_expression(functions, scope, arg)?;
+            }
+            Ok(())
+        },
+        Expression::InitializerExpression { elements } => {
+            for element in elements {
+                check_expression(functions, scope, element)?;
+            }
+            Ok(())
+        },
+        Expression::IndexExpression { left, index } => {
+            check_expression(functions, scope, left)?;
+            check_expression(functions, scope, index)
+        },
     }
 }
 
@@ -361,6 +375,9 @@ struct point foo(point p) {
     for (i = 0; j < l; k++) {
         xx++;
     }
+    int as[] = {q, r};
+    bs[k];
+    foo(abc);
 }
 ";
         let mut parser = Parser::new(Lexer::new(input));
@@ -371,7 +388,7 @@ struct point foo(point p) {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 12);
+            assert_eq!(errors.len(), 15);
             assert_eq!(true, errors[0].starts_with("variable `a` is not defined"), "actual message: `{}`", errors[0]);
             assert_eq!(true, errors[1].starts_with("variable `foo` is not defined"), "actual message: `{}`", errors[1]);
             assert_eq!(true, errors[2].starts_with("variable `bar` is not defined"), "actual message: `{}`", errors[2]);
@@ -384,6 +401,37 @@ struct point foo(point p) {
             assert_eq!(true, errors[9].starts_with("variable `j` is not defined"), "actual message: `{}`", errors[9]);
             assert_eq!(true, errors[10].starts_with("variable `k` is not defined"), "actual message: `{}`", errors[10]);
             assert_eq!(true, errors[11].starts_with("variable `xx` is not defined"), "actual message: `{}`", errors[11]);
+            assert_eq!(true, errors[12].starts_with("variable `q` is not defined"), "actual message: `{}`", errors[12]);
+            assert_eq!(true, errors[13].starts_with("variable `bs` is not defined"), "actual message: `{}`", errors[13]);
+            assert_eq!(true, errors[14].starts_with("variable `abc` is not defined"), "actual message: `{}`", errors[14]);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_not_defined_function() {
+        // given
+        let input = "
+int x = 10;
+struct point {
+    int x;
+    int y;
+};
+struct point foo(point p) {
+    bar(p);
+}
+";
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_scope(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!(true, errors[0].starts_with("function `bar` is not defined"), "actual message: `{}`", errors[0]);
         } else {
             assert!(false);
         }
