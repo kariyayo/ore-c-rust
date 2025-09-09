@@ -194,11 +194,58 @@ fn check_statement(
             let mut local_scope = LocalScope { parent: Some(&scope), entities: HashSet::new() };
             statements.iter().map(|stmt| check_statement(functions, &mut local_scope, stmt)).flatten().collect()
         },
-        Statement::If { condition, consequence, alternative } => todo!(),
-        Statement::Switch { condition, switch_block } => todo!(),
-        Statement::While { condition, body } => todo!(),
-        Statement::DoWhile { body, condition } => todo!(),
-        Statement::For { init, condition, post, body } => todo!(),
+        Statement::If { condition, consequence, alternative } => {
+            println!("@@@@ check_statement (If) ::: local_scope: {:?}", scope);
+            let mut results: Vec<Result<()>> = vec![];
+            let condition_result = check_expression(scope, condition);
+            let mut consequence_result = check_statement(functions, scope, consequence);
+            let mut alternative_result = alternative
+                .as_ref()
+                .map(|stmt| check_statement(functions, scope, &stmt))
+                .unwrap_or(vec![]);
+            results.push(condition_result);
+            results.append(&mut consequence_result);
+            results.append(&mut alternative_result);
+            results
+        },
+        Statement::Switch { condition, switch_block } => {
+            println!("@@@@ check_statement (Switch) ::: local_scope: {:?}", scope);
+            let mut results: Vec<Result<()>> = vec![];
+            results.push(check_expression(scope, condition));
+            for stmt in &switch_block.body {
+                results.append(&mut check_statement(functions, scope, &stmt));
+            }
+            results
+        },
+        Statement::While { condition, body } => {
+            println!("@@@@ check_statement (While) ::: local_scope: {:?}", scope);
+            let mut results: Vec<Result<()>> = vec![];
+            results.push(check_expression(scope, condition));
+            results.append(&mut check_statement(functions, scope, body));
+            results
+        },
+        Statement::DoWhile { body, condition } => {
+            println!("@@@@ check_statement (DoWhile) ::: local_scope: {:?}", scope);
+            let mut results: Vec<Result<()>> = vec![];
+            results.append(&mut check_statement(functions, scope, body));
+            results.push(check_expression(scope, condition));
+            results
+        },
+        Statement::For { init, condition, post, body } => {
+            println!("@@@@ check_statement (For) ::: local_scope: {:?}", scope);
+            let mut results: Vec<Result<()>> = vec![];
+            init.iter().for_each(|init_stmt| {
+                results.push(check_expression(scope, init_stmt));
+            });
+            condition.iter().for_each(|condition_stmt| {
+                results.push(check_expression(scope, condition_stmt));
+            });
+            post.iter().for_each(|post_stmt| {
+                results.push(check_expression(scope, post_stmt));
+            });
+            results.append(&mut check_statement(functions, scope, body));
+            results
+        },
         Statement::ExpressionStatement(expression) => vec![check_expression(scope, expression)],
     }
 }
@@ -216,8 +263,14 @@ fn check_expression(scope: &LocalScope, exp: &Expression) -> Result<()> {
             }
         },
         Expression::PrefixExpression { operator: _, right } => check_expression(scope, right),
-        Expression::InfixExpression { operator: _, left, right } => {
+        Expression::InfixExpression { operator, left, right } => {
             check_expression(scope, left)?;
+
+            // 構造体のメンバーのチェックはscope_checkerの対象外とする
+            if operator == "." || operator == "->" {
+                return Ok(());
+            }
+
             check_expression(scope, right)
         },
         Expression::PostfixExpression { operator: _, left } => check_expression(scope, left),
@@ -256,7 +309,7 @@ struct point {
     int y;
 };
 struct rect foo(point p) {
-    int p = 1;
+    int p = 1; // duplicated
     struct point pp = {p.x + 10, p.y + 10};
     return pp;
 }
@@ -287,9 +340,27 @@ struct point {
 };
 struct point foo(point p) {
     struct point pp = {p.x + 10, p.y + 10};
-    ++(foo.x);
-    (bar.x)--;
-    return hoge;
+    if (a == 0) {
+        ++(foo.x);
+    } else {
+        (bar.x)--;
+    }
+    switch (p.x) {
+        case 1:
+        case 2:
+            return b;
+        default:
+            return c;
+    }
+    while (p.x > p.y) {
+        zz++;
+    }
+    do {
+        yy++;
+    } while (m > n);
+    for (i = 0; j < l; k++) {
+        xx++;
+    }
 }
 ";
         let mut parser = Parser::new(Lexer::new(input));
@@ -300,10 +371,19 @@ struct point foo(point p) {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 3);
-            assert_eq!(true, errors[0].starts_with("variable `foo` is not defined"), "actual message: `{}`", errors[0]);
-            assert_eq!(true, errors[1].starts_with("variable `bar` is not defined"), "actual message: `{}`", errors[1]);
-            assert_eq!(true, errors[2].starts_with("variable `hoge` is not defined"), "actual message: `{}`", errors[2]);
+            assert_eq!(errors.len(), 12);
+            assert_eq!(true, errors[0].starts_with("variable `a` is not defined"), "actual message: `{}`", errors[0]);
+            assert_eq!(true, errors[1].starts_with("variable `foo` is not defined"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[2].starts_with("variable `bar` is not defined"), "actual message: `{}`", errors[2]);
+            assert_eq!(true, errors[3].starts_with("variable `b` is not defined"), "actual message: `{}`", errors[3]);
+            assert_eq!(true, errors[4].starts_with("variable `c` is not defined"), "actual message: `{}`", errors[4]);
+            assert_eq!(true, errors[5].starts_with("variable `zz` is not defined"), "actual message: `{}`", errors[5]);
+            assert_eq!(true, errors[6].starts_with("variable `yy` is not defined"), "actual message: `{}`", errors[6]);
+            assert_eq!(true, errors[7].starts_with("variable `m` is not defined"), "actual message: `{}`", errors[7]);
+            assert_eq!(true, errors[8].starts_with("variable `i` is not defined"), "actual message: `{}`", errors[8]);
+            assert_eq!(true, errors[9].starts_with("variable `j` is not defined"), "actual message: `{}`", errors[9]);
+            assert_eq!(true, errors[10].starts_with("variable `k` is not defined"), "actual message: `{}`", errors[10]);
+            assert_eq!(true, errors[11].starts_with("variable `xx` is not defined"), "actual message: `{}`", errors[11]);
         } else {
             assert!(false);
         }
