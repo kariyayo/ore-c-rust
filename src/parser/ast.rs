@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
@@ -28,7 +28,7 @@ impl TypeRef {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StructDecl {
     pub type_dec: TypeRef,
     pub name: String,
@@ -47,14 +47,14 @@ impl fmt::Display for StructDecl {
 }
 
 /// トップレベルの宣言・定義を表すノード
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ExternalItem {
     FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
     Struct(TypeRef),
     VarDecl(Vec<(TypeRef, Declarator)>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Parameter {
     pub type_dec: TypeRef,
     pub name: String,
@@ -73,7 +73,7 @@ pub struct Program {
 }
 
 /// 文を表すノード
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Statement {
     Return(Option<Expression>),
     Break,
@@ -88,7 +88,7 @@ pub enum Statement {
     ExpressionStatement(Expression),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Declarator {
     pub name: String,
     pub value: Option<Expression>,
@@ -120,26 +120,26 @@ pub struct Declarator {
 ///     ],
 /// }
 /// 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SwitchBlock {
     pub label_entries: Vec<SwitchLabelEntry>,
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SwitchLabelEntry {
     pub labels: Vec<SwitchLabel>,
     pub start_index: i32,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SwitchLabel {
     Case(Expression),
     Default,
 }
 
 /// 式を表すノード
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression {
     Int(i32),
     CharacterLiteral(char),
