@@ -199,9 +199,23 @@ impl Lexer {
                     (TokenType::Percent, self.ch.to_string(), false)
                 }
             },
+            '<' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (TokenType::LtEq, "<=".to_string(), false)
+                } else {
+                    (TokenType::Lt, self.ch.to_string(), false)
+                }
+            },
+            '>' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (TokenType::GtEq, ">=".to_string(), false)
+                } else {
+                    (TokenType::Gt, self.ch.to_string(), false)
+                }
+            },
             '&' => (TokenType::Ampersand, self.ch.to_string(), false),
-            '<' => (TokenType::Lt, self.ch.to_string(), false),
-            '>' => (TokenType::Gt, self.ch.to_string(), false),
             '(' => (TokenType::Lparem, self.ch.to_string(), false),
             ')' => (TokenType::Rparem, self.ch.to_string(), false),
             '{' => (TokenType::Lbrace, self.ch.to_string(), false),
@@ -285,7 +299,7 @@ switch (x) {
         return 0;
 }
 
-while (x < 10) continue;
+while (x <= 10) continue;
 
 do {
     return 1;
@@ -427,11 +441,11 @@ p->x;
             (TokenType::While, "while", 41, 1),
             (TokenType::Lparem, "(", 41, 7),
             (TokenType::Ident, "x", 41, 8),
-            (TokenType::Lt, "<", 41, 10),
-            (TokenType::Integer, "10", 41, 12),
-            (TokenType::Rparem, ")", 41, 14),
-            (TokenType::Continue, "continue", 41, 16),
-            (TokenType::Semicolon, ";", 41, 24),
+            (TokenType::LtEq, "<=", 41, 10),
+            (TokenType::Integer, "10", 41, 13),
+            (TokenType::Rparem, ")", 41, 15),
+            (TokenType::Continue, "continue", 41, 17),
+            (TokenType::Semicolon, ";", 41, 25),
             (TokenType::Do, "do", 43, 1),
             (TokenType::Lbrace, "{", 43, 4),
             (TokenType::Return, "return", 44, 5),

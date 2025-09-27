@@ -161,7 +161,7 @@ mod tests {
 int x = 'a';
 int y = 1 + 'a';
 char c = 1 > 2;
-int cond = 1 < 'a';
+int cond = 1 <= 'a';
 ";
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
