@@ -215,7 +215,22 @@ impl Lexer {
                     (TokenType::Gt, self.ch.to_string(), false)
                 }
             },
-            '&' => (TokenType::Ampersand, self.ch.to_string(), false),
+            '&' => {
+                if self.peek_char() == '&' {
+                    self.read_char();
+                    (TokenType::And, "&&".to_string(), false)
+                } else {
+                    (TokenType::Ampersand, self.ch.to_string(), false)
+                }
+            },
+            '|' => {
+                if self.peek_char() == '|' {
+                    self.read_char();
+                    (TokenType::Or, "||".to_string(), false)
+                } else {
+                    (TokenType::Pipe, self.ch.to_string(), false)
+                }
+            }
             '(' => (TokenType::Lparem, self.ch.to_string(), false),
             ')' => (TokenType::Rparem, self.ch.to_string(), false),
             '{' => (TokenType::Lbrace, self.ch.to_string(), false),
@@ -316,6 +331,10 @@ p->x;
 '\\\\';
 \"Hello, World!\";
 \" escape \\\" \\n \";
+
+a && b;
+a || b;
+
 ";
         let tests = vec![
             // (TokenType, "literal", row, col)
@@ -497,6 +516,14 @@ p->x;
             (TokenType::Semicolon, ";", 56, 16),
             (TokenType::String, "\" escape \\\" \\n \"", 57, 1), // -> " escape \" \n"
             (TokenType::Semicolon, ";", 57, 17),
+            (TokenType::Ident, "a", 59, 1),
+            (TokenType::And, "&&", 59, 3),
+            (TokenType::Ident, "b", 59, 6),
+            (TokenType::Semicolon, ";", 59, 7),
+            (TokenType::Ident, "a", 60, 1),
+            (TokenType::Or, "||", 60, 3),
+            (TokenType::Ident, "b", 60, 6),
+            (TokenType::Semicolon, ";", 60, 7),
         ];
 
         let mut l = Lexer::new(input);

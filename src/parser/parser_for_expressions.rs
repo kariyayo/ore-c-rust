@@ -10,6 +10,8 @@ use super::ast::{Expression};
 pub(super) enum ExpressionPrecedence {
     Lowest,
     Assign, // =
+    Or, // ||
+    And, // &&
     Equals, // ==
     LessGreater, // > または <
     Sum, // +
@@ -31,6 +33,8 @@ fn precedences() -> &'static HashMap<TokenType, ExpressionPrecedence> {
         precedences.insert(TokenType::AsteriskAssign, ExpressionPrecedence::Assign);
         precedences.insert(TokenType::SlashAssign, ExpressionPrecedence::Assign);
         precedences.insert(TokenType::PercentAssign, ExpressionPrecedence::Assign);
+        precedences.insert(TokenType::Or, ExpressionPrecedence::Or);
+        precedences.insert(TokenType::And, ExpressionPrecedence::And);
         precedences.insert(TokenType::Eq, ExpressionPrecedence::Equals);
         precedences.insert(TokenType::NotEq, ExpressionPrecedence::Equals);
         precedences.insert(TokenType::Lt, ExpressionPrecedence::LessGreater);
@@ -65,6 +69,8 @@ fn is_infix_token_type(token_type: TokenType) -> bool {
         | TokenType::LtEq
         | TokenType::Gt
         | TokenType::GtEq
+        | TokenType::And
+        | TokenType::Or
         | TokenType::Assign
         | TokenType::PlusAssign
         | TokenType::MinusAssign
@@ -341,6 +347,12 @@ mod tests {
             ("a + b - c", "((a + b) - c)"),
             ("a + b * c", "(a + (b * c))"),
             ("a + b / c", "(a + (b / c))"),
+            ("a && b == c", "(a && (b == c))"),
+            ("a == b && c", "((a == b) && c)"),
+            ("a || b != c", "(a || (b != c))"),
+            ("a != b || c", "((a != b) || c)"),
+            ("a && b || c", "((a && b) || c)"),
+            ("a || b && c", "(a || (b && c))"),
             ("a + b * c + d", "((a + (b * c)) + d)"),
             ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
             ("-5 * 5", "((-5) * 5)"),
