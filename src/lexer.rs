@@ -199,9 +199,38 @@ impl Lexer {
                     (TokenType::Percent, self.ch.to_string(), false)
                 }
             },
-            '&' => (TokenType::Ampersand, self.ch.to_string(), false),
-            '<' => (TokenType::Lt, self.ch.to_string(), false),
-            '>' => (TokenType::Gt, self.ch.to_string(), false),
+            '<' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (TokenType::LtEq, "<=".to_string(), false)
+                } else {
+                    (TokenType::Lt, self.ch.to_string(), false)
+                }
+            },
+            '>' => {
+                if self.peek_char() == '=' {
+                    self.read_char();
+                    (TokenType::GtEq, ">=".to_string(), false)
+                } else {
+                    (TokenType::Gt, self.ch.to_string(), false)
+                }
+            },
+            '&' => {
+                if self.peek_char() == '&' {
+                    self.read_char();
+                    (TokenType::And, "&&".to_string(), false)
+                } else {
+                    (TokenType::Ampersand, self.ch.to_string(), false)
+                }
+            },
+            '|' => {
+                if self.peek_char() == '|' {
+                    self.read_char();
+                    (TokenType::Or, "||".to_string(), false)
+                } else {
+                    (TokenType::Pipe, self.ch.to_string(), false)
+                }
+            }
             '(' => (TokenType::Lparem, self.ch.to_string(), false),
             ')' => (TokenType::Rparem, self.ch.to_string(), false),
             '{' => (TokenType::Lbrace, self.ch.to_string(), false),
@@ -285,7 +314,7 @@ switch (x) {
         return 0;
 }
 
-while (x < 10) continue;
+while (x <= 10) continue;
 
 do {
     return 1;
@@ -302,6 +331,10 @@ p->x;
 '\\\\';
 \"Hello, World!\";
 \" escape \\\" \\n \";
+
+a && b;
+a || b;
+
 ";
         let tests = vec![
             // (TokenType, "literal", row, col)
@@ -427,11 +460,11 @@ p->x;
             (TokenType::While, "while", 41, 1),
             (TokenType::Lparem, "(", 41, 7),
             (TokenType::Ident, "x", 41, 8),
-            (TokenType::Lt, "<", 41, 10),
-            (TokenType::Integer, "10", 41, 12),
-            (TokenType::Rparem, ")", 41, 14),
-            (TokenType::Continue, "continue", 41, 16),
-            (TokenType::Semicolon, ";", 41, 24),
+            (TokenType::LtEq, "<=", 41, 10),
+            (TokenType::Integer, "10", 41, 13),
+            (TokenType::Rparem, ")", 41, 15),
+            (TokenType::Continue, "continue", 41, 17),
+            (TokenType::Semicolon, ";", 41, 25),
             (TokenType::Do, "do", 43, 1),
             (TokenType::Lbrace, "{", 43, 4),
             (TokenType::Return, "return", 44, 5),
@@ -483,6 +516,14 @@ p->x;
             (TokenType::Semicolon, ";", 56, 16),
             (TokenType::String, "\" escape \\\" \\n \"", 57, 1), // -> " escape \" \n"
             (TokenType::Semicolon, ";", 57, 17),
+            (TokenType::Ident, "a", 59, 1),
+            (TokenType::And, "&&", 59, 3),
+            (TokenType::Ident, "b", 59, 6),
+            (TokenType::Semicolon, ";", 59, 7),
+            (TokenType::Ident, "a", 60, 1),
+            (TokenType::Or, "||", 60, 3),
+            (TokenType::Ident, "b", 60, 6),
+            (TokenType::Semicolon, ";", 60, 7),
         ];
 
         let mut l = Lexer::new(input);
