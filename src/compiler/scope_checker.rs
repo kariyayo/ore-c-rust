@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::parser::ast::{Expression, ExternalItem, Parameter, Program, Statement, TypeRef};
+use crate::parser::ast::{Expression, ExternalItem, Function, Parameter, Program, Statement, TypeRef};
 
 #[derive(Debug)]
 pub struct Error {
@@ -83,8 +83,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
                     // var_decl_initializer.push(declarator);
                 }
             },
-            ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } => {
-                functions.put(name);
+            ExternalItem::FunctionDecl(function) => {
+                functions.put(&function.name);
             },
             _ => {},
         }
@@ -94,7 +94,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
 
     let results: Vec<Error> = ast.external_items.iter()
         .filter_map(|item| {
-            if let ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } = item {
+            if let ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body }) = item {
                 Some(check_function(
                     // &types,
                     &functions,

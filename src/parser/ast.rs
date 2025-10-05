@@ -49,9 +49,17 @@ impl fmt::Display for StructDecl {
 /// トップレベルの宣言・定義を表すノード
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ExternalItem {
-    FunctionDecl { return_type_dec: TypeRef, name: String, parameters: Vec<Parameter>, body: Option<Box<Statement>> },
+    FunctionDecl(Function),
     Struct(TypeRef),
     VarDecl(Vec<(TypeRef, Declarator)>),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Function {
+    pub return_type_dec: TypeRef,
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub body: Option<Box<Statement>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
