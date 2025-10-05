@@ -1,6 +1,6 @@
-use std::fmt;
+use std::{collections::{HashMap, HashSet}, fmt};
 
-use crate::parser::ast::{Declarator, Expression, ExternalItem, Program, Statement, TypeRef};
+use crate::parser::ast::{Declarator, Expression, ExternalItem, Function, Parameter, Program, Statement, TypeRef};
 
 #[derive(Debug)]
 pub struct Error {
@@ -17,24 +17,114 @@ impl core::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug)]
+pub struct TypeTable {
+    entities: HashSet<TypeRef>,
+}
+
+impl TypeTable {
+    fn put(&mut self, type_ref: TypeRef) {
+        self.entities.insert(type_ref);
+    }
+    fn find(&self, type_ref: &TypeRef) -> bool {
+        self.entities.contains(type_ref)
+    }
+}
+
+pub struct Functions {
+    names: HashSet<String>,
+    entities: Vec<Function>,
+}
+
+impl Functions {
+    fn put(&mut self, function: Function) {
+        self.names.insert(function.name.clone());
+        self.entities.push(function);
+    }
+    fn find(&self, name: &str) -> bool {
+        self.names.contains(name)
+    }
+}
+
+#[derive(Debug)]
+struct LocalScope<'a> {
+    parent: Option<&'a LocalScope<'a>>,
+    entities: HashMap<String, TypeRef>,
+}
+
+impl <'a> LocalScope<'a> {
+    fn put(&mut self, name: &str, type_ref: TypeRef) {
+        self.entities.insert(name.to_string(), type_ref);
+    }
+
+    fn find(&self, name: &str) -> Option<TypeRef> {
+        self.entities.get(name).cloned().or_else(|| {
+            self.parent.and_then(|p| p.find(name))
+        })
+    }
+}
+
+struct Env<'a> {
+    type_table: &'a mut TypeTable,
+    functions: &'a mut Functions,
+    scope: LocalScope<'a>,
+}
+
+impl <'a> Env<'a> {
+    fn put_type(&mut self, type_ref: TypeRef) {
+        self.type_table.put(type_ref);
+    }
+
+    fn find_type(&self, type_ref: &TypeRef) -> bool {
+        self.type_table.find(type_ref)
+    }
+
+    fn put_function(&mut self, function: Function) {
+        self.functions.put(function);
+    }
+
+    fn find_function(&self, name: &str) -> bool {
+        self.functions.find(name)
+    }
+
+    fn put_vardecl(&mut self, name: &str, type_ref: TypeRef) {
+        self.scope.put(name, type_ref);
+    }
+
+    fn find_vardecl(&self, name: &str) -> Option<TypeRef> {
+        self.scope.find(name)
+    }
+}
+
 pub fn check_type(ast: &Program) -> Result<()> {
+    let mut type_table = TypeTable { entities: generate_c_types() };
+    let mut functions = Functions { names: HashSet::new(), entities: vec![] };
+    let global_scope = LocalScope { parent: None, entities: HashMap::new() };
+
     let mut results: Vec<Error> = vec![];
+    let mut env = Env { type_table: &mut type_table, functions: &mut functions, scope: global_scope };
+
     for item in &ast.external_items {
         match item {
             ExternalItem::Struct(type_ref) => {
-                todo!();
+                // TODO: check struct's fields
+                env.put_type(type_ref.clone());
             },
             ExternalItem::VarDecl(items) => {
                 for (type_ref, decl) in items {
-                    if let Err(e) = check_declarator(type_ref, decl) {
+                    if let Err(e) = check_declarator(&mut env, type_ref, decl) {
                         results.push(e);
+                    } else {
+                        env.put_vardecl(decl.name.as_str(), type_ref.clone());
                     }
                 }
             },
-            ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } => {
-                // TODO:
-                if let Some(stmt) = body {
-                    results.extend(check_statement(stmt));
+            ExternalItem::FunctionDecl(function) => {
+                let Function { return_type_dec, name, parameters, body } = function;
+                if let Err(e) = check_function_declaration(&mut env, return_type_dec, name, parameters, body) {
+                    results.push(e);
+                } else {
+                    env.put_function(function.clone());
                 }
             },
         }
@@ -45,34 +135,44 @@ pub fn check_type(ast: &Program) -> Result<()> {
     Err(Error { errors: results.into_iter().flat_map(|e| e.errors).collect() })
 }
 
-fn check_statement(stmt: &Statement) -> Vec<Error> {
+fn check_statement(env: &mut Env, stmt: &Statement) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
     match stmt {
-        Statement::Return(expression) => todo!(),
+        Statement::Return(expression) => {
+            if let Some(exp) = expression {
+                if let Err(e) = check_expression(env, exp) {
+                    results.push(e);
+                }
+            }
+        },
         Statement::Break => todo!(),
         Statement::Continue => todo!(),
         Statement::VarDecl(items) => {
             for (type_ref, decl) in items {
-                if let Err(e) = check_declarator(type_ref, decl) {
+                if let Err(e) = check_declarator(env, type_ref, decl) {
                     results.push(e);
+                } else {
+                    env.put_vardecl(&decl.name, type_ref.clone());
                 }
             }
         }
         Statement::Block(statements) => {
+            let local_scope = LocalScope { parent: Some(&env.scope), entities: HashMap::new() };
+            let mut new_env = Env { type_table: env.type_table, functions: env.functions, scope: local_scope };
             statements.iter().for_each(|stmt| {
-                let mut errors = check_statement(stmt);
+                let mut errors = check_statement(&mut new_env, stmt);
                 results.append(&mut errors);
             })
         },
         Statement::If { condition, consequence, alternative } => {
-            match check_expression(condition) {
+            match check_expression(env, condition) {
                 Ok(condition_type) => {
                     if condition_type.type_name() != "int" {
                         results.push(Error { errors: vec![format!("type error. condition type is {}", condition_type.type_name())] });
                     }
-                    results.extend(check_statement(&consequence));
+                    results.extend(check_statement(env, &consequence));
                     if let Some(alt_stmt) = alternative {
-                        results.extend(check_statement(alt_stmt));
+                        results.extend(check_statement(env, alt_stmt));
                     }
                 },
                 Err(e) => results.push(e),
@@ -87,7 +187,7 @@ fn check_statement(stmt: &Statement) -> Vec<Error> {
     results
 }
 
-fn check_expression(exp: &Expression) -> Result<TypeRef> {
+fn check_expression(env: &Env, exp: &Expression) -> Result<TypeRef> {
     match exp {
         Expression::Int(_) => {
             Ok(TypeRef::Named("int".to_string()))
@@ -96,16 +196,25 @@ fn check_expression(exp: &Expression) -> Result<TypeRef> {
             Ok(TypeRef::Named("char".to_string()))
         },
         Expression::StringLiteral(_) => todo!(),
-        Expression::Identifier(_) => todo!(),
+        Expression::Identifier(name) => {
+            match env.find_vardecl(name) {
+                Some(type_ref) => {
+                    Ok(type_ref)
+                },
+                None => {
+                    Err(Error { errors: vec![format!("variable `{}` is not defined", name)] })
+                }
+            }
+        },
         Expression::PrefixExpression { operator, right } => todo!(),
         Expression::InfixExpression { operator, left, right } => {
             match operator.as_str() {
                 "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
-                    check_basic_calc_operator(left, right)
+                    check_basic_calc_operator(env, left, right)
                 }
                 _ => {
-                    check_expression(left)?;
-                    check_expression(right)
+                    check_expression(env, left)?;
+                    check_expression(env, right)
                 }
             }
         },
@@ -116,9 +225,40 @@ fn check_expression(exp: &Expression) -> Result<TypeRef> {
     }
 } 
 
-fn check_declarator(type_ref: &TypeRef, decl: &Declarator) -> Result<TypeRef> {
+fn check_function_declaration(
+    env: &mut Env,
+    return_type_dec: &TypeRef,
+    name: &str,
+    parameters: &Vec<Parameter>,
+    body: &Option<Box<Statement>>,
+) -> Result<()> {
+    let mut results: Vec<Error> = vec![];
+
+    if !env.find_type(return_type_dec) {
+        results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec.type_name())] });
+    }
+
+    let local_scope = LocalScope { parent: Some(&env.scope), entities: HashMap::new() };
+    let mut new_env = Env { type_table: env.type_table, functions: env.functions, scope: local_scope };
+    for p in parameters {
+        if !new_env.find_type(&p.type_dec) {
+            results.push(Error { errors: vec![format!("parameter type is not defined: {:?}", p.type_dec.type_name())] });
+        }
+        new_env.put_vardecl(&p.name, p.type_dec.clone());
+    }
+
+    if let Some(stmt) = body {
+        results.extend(check_statement(&mut new_env, stmt));
+    }
+    if results.is_empty() {
+        return Ok(());
+    }
+    Err(Error { errors: results.into_iter().flat_map(|e| e.errors).collect() })
+}
+
+fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator) -> Result<TypeRef> {
     if let Some(exp) = &decl.value {
-        let var_type = check_expression(exp)?;
+        let var_type = check_expression(env, exp)?;
         if type_ref.type_name() != var_type.type_name() {
             return Err(Error {
                 errors: vec![format!("type error. initialize variable type is {}, value type is {}", type_ref.type_name(), var_type.type_name())]
@@ -128,13 +268,13 @@ fn check_declarator(type_ref: &TypeRef, decl: &Declarator) -> Result<TypeRef> {
     Ok(type_ref.clone())
 }
 
-fn check_basic_calc_operator(left: &Expression, right: &Expression) -> Result<TypeRef> {
+fn check_basic_calc_operator(env: &Env, left: &Expression, right: &Expression) -> Result<TypeRef> {
     let mut errors: Vec<String> = vec![];
-    let left_type = check_expression(left)?;
+    let left_type = check_expression(env, left)?;
     if left_type.type_name() != "int" {
         errors.push(format!("type error. left is {}", left_type.type_name()));
     }
-    let right_type = check_expression(right)?;
+    let right_type = check_expression(env,right)?;
     if right_type.type_name() != "int" {
         errors.push(format!("type error. right is {}", right_type.type_name()));
     }
@@ -147,6 +287,19 @@ fn check_basic_calc_operator(left: &Expression, right: &Expression) -> Result<Ty
     }
     Ok(left_type)
 }
+
+fn generate_c_types() -> HashSet<TypeRef> {
+    let mut types = HashSet::new();
+
+    types.insert(TypeRef::Named("void".to_string()));
+    types.insert(TypeRef::Named("int".to_string()));
+    types.insert(TypeRef::Named("char".to_string()));
+
+    // todo...
+
+    types
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -162,6 +315,11 @@ int x = 'a';
 int y = 1 + 'a';
 char c = 1 > 2;
 int cond = 1 <= 'a';
+
+int inc(int a) {
+    int b = a + 1;
+    return b + c;
+}
 ";
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
@@ -171,11 +329,12 @@ int cond = 1 <= 'a';
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 4);
+            assert_eq!(errors.len(), 5);
             assert_eq!(true, errors[0].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[0]);
             assert_eq!(true, errors[1].starts_with("type error. right is"), "actual message: `{}`", errors[1]);
             assert_eq!(true, errors[2].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[2]);
             assert_eq!(true, errors[3].starts_with("type error. right is"), "actual message: `{}`", errors[3]);
+            assert_eq!(true, errors[4].starts_with("variable `c` is not defined"), "actual message: `{}`", errors[4]);
         } else {
             assert!(false);
         }
