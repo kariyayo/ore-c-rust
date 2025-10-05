@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TypeRef {
     Named(String), // 名前付き型（例: int, char, void など）
     Pointer(Box<TypeRef>), // ポインタ型（例: int*）
@@ -28,7 +28,7 @@ impl TypeRef {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct StructDecl {
     pub type_dec: TypeRef,
     pub name: String,
