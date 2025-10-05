@@ -1,3 +1,5 @@
+use crate::parser::ast::Function;
+
 use super::{Parser, Result, Error, TokenType};
 use super::ast::{ExternalItem, TypeRef, Parameter};
 
@@ -68,9 +70,9 @@ impl Parser {
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
-            Ok(ExternalItem::FunctionDecl { return_type_dec, name, parameters, body: Some(Box::new(body)) })
+            Ok(ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }))
         } else {
-            Ok(ExternalItem::FunctionDecl { return_type_dec, name, parameters, body: None })
+            Ok(ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }))
         };
     }
 
@@ -258,7 +260,7 @@ struct point* movepoint(struct point* p, int x, int y);
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::FunctionDecl { return_type_dec, name, parameters, body } => {
+                ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body }) => {
                     let (expected_return_type, expected_name, expected_parameters, expected_body) = &expected[row_num];
                     assert_eq!(return_type_dec.type_name(), expected_return_type.to_string());
                     assert_eq!(*name, *expected_name);
