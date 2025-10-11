@@ -230,16 +230,20 @@ fn check_expression(env: &Env, exp: &Expression) -> Result<TypeRef> {
                     }
                     let errors: Vec<String> = f.parameters.iter()
                         .zip(arguments.iter())
-                        .flat_map(|(param, arg)| {
-                            let result = check_expression(env, arg);
-                            if let Ok(arg_type) = result {
-                                if arg_type != param.type_dec {
-                                    vec![format!("wrong argument type, `{}`.", function_name)]
-                                } else {
-                                    vec![]
-                                }
-                            } else {
-                                result.unwrap_err().errors
+                        .enumerate()
+                        .flat_map(|(i, (param, arg))| {
+                            match check_expression(env, arg) {
+                                Ok(arg_type) => {
+                                    if arg_type != param.type_dec {
+                                        vec![format!(
+                                            "mismatched type for argument {} in function call, `{}`.",
+                                            i + 1, function_name,
+                                        )]
+                                    } else {
+                                        vec![]
+                                    }
+                                },
+                                Err(e) => e.errors,
                             }
                         }).collect();
                     if errors.is_empty() {
