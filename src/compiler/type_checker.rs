@@ -182,7 +182,11 @@ fn check_statement(env: &mut Env, stmt: &Statement) -> Vec<Error> {
         Statement::While { condition, body } => todo!(),
         Statement::DoWhile { body, condition } => todo!(),
         Statement::For { init, condition, post, body } => todo!(),
-        Statement::ExpressionStatement(expression) => todo!(),
+        Statement::ExpressionStatement(expression) => {
+            if let Err(e) = check_expression(env, expression) {
+                results.push(e);
+            }
+        },
     }
     results
 }
@@ -212,9 +216,22 @@ fn check_expression(env: &Env, exp: &Expression) -> Result<TypeRef> {
                 "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
                     check_basic_calc_operator(env, left, right)
                 }
+                "[" => todo!(),
+                "." => todo!(),
+                "->" => todo!(),
                 _ => {
-                    check_expression(env, left)?;
-                    check_expression(env, right)
+                    let left_type = check_expression(env, left)?;
+                    let right_type = check_expression(env, right)?;
+                    if left_type != right_type {
+                        Err(Error {
+                            errors: vec![format!(
+                                "type mismatched for operator `{}`. left type is {}, right type is {}",
+                                operator, left_type.type_name(), right_type.type_name()
+                            )]
+                        })
+                    } else {
+                        Ok(left_type)
+                    }
                 }
             }
         },
@@ -306,11 +323,11 @@ fn check_basic_calc_operator(env: &Env, left: &Expression, right: &Expression) -
     let mut errors: Vec<String> = vec![];
     let left_type = check_expression(env, left)?;
     if left_type.type_name() != "int" {
-        errors.push(format!("type error. left is {}", left_type.type_name()));
+        errors.push(format!("type error. left should be `int`, but is {}", left_type.type_name()));
     }
     let right_type = check_expression(env,right)?;
     if right_type.type_name() != "int" {
-        errors.push(format!("type error. right is {}", right_type.type_name()));
+        errors.push(format!("type error. right should be `int`, but is {}", right_type.type_name()));
     }
     if !errors.is_empty() {
         return Err(Error { errors });
@@ -365,9 +382,9 @@ int inc(int a) {
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 5);
             assert_eq!(true, errors[0].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[0]);
-            assert_eq!(true, errors[1].starts_with("type error. right is"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[1].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
             assert_eq!(true, errors[2].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[2]);
-            assert_eq!(true, errors[3].starts_with("type error. right is"), "actual message: `{}`", errors[3]);
+            assert_eq!(true, errors[3].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[3]);
             assert_eq!(true, errors[4].starts_with("variable `c` is not defined"), "actual message: `{}`", errors[4]);
         } else {
             assert!(false);
@@ -396,7 +413,7 @@ int main() {
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 2);
             assert_eq!(true, errors[0].starts_with("type error. condition type is"), "actual message: `{}`", errors[0]);
-            assert_eq!(true, errors[1].starts_with("type error. right is"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[1].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
         } else {
             assert!(false);
         }
@@ -410,8 +427,16 @@ int inc(int a) {
     return a + 1;
 }
 int main() {
-    int x = 1;
-    char y = inc(x);
+    int x1 = 1;
+    int x2 = random();
+
+    char y1 = inc(x1);
+    char y2;
+    y2 = inc(x1);
+
+    int z1 = inc();
+    int z2 = inc('a');
+    int z3 = inc(x1, x1);
     return 0;
 }
 ";
@@ -423,8 +448,13 @@ int main() {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 1);
-            assert_eq!(true, errors[0].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[0]);
+            assert_eq!(errors.len(), 6);
+            assert_eq!("function `random` is not defined", errors[0]);
+            assert_eq!("type error. initialize variable type is char, value type is int", errors[1]);
+            assert_eq!("type mismatched for operator `=`. left type is char, right type is int", errors[2]);
+            assert_eq!("wrong number of arguments, `inc`.", errors[3]);
+            assert_eq!("mismatched type for argument 1 in function call, `inc`.", errors[4]);
+            assert_eq!("wrong number of arguments, `inc`.", errors[5]);
         } else {
             assert!(false);
         }
