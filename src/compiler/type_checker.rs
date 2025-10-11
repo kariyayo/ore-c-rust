@@ -26,23 +26,22 @@ impl TypeTable {
     fn put(&mut self, type_ref: TypeRef) {
         self.entities.insert(type_ref);
     }
-    fn find(&self, type_ref: &TypeRef) -> bool {
+    fn contains(&self, type_ref: &TypeRef) -> bool {
         self.entities.contains(type_ref)
     }
 }
 
+#[derive(Debug)]
 pub struct Functions {
-    names: HashSet<String>,
-    entities: Vec<Function>,
+    entities: HashMap<String, Function>,
 }
 
 impl Functions {
     fn put(&mut self, function: Function) {
-        self.names.insert(function.name.clone());
-        self.entities.push(function);
+        self.entities.insert(function.name.to_string(), function);
     }
-    fn find(&self, name: &str) -> bool {
-        self.names.contains(name)
+    fn find(&self, name: &str) -> Option<Function> {
+        self.entities.get(name).cloned()
     }
 }
 
@@ -64,6 +63,7 @@ impl <'a> LocalScope<'a> {
     }
 }
 
+#[derive(Debug)]
 struct Env<'a> {
     type_table: &'a mut TypeTable,
     functions: &'a mut Functions,
@@ -75,15 +75,15 @@ impl <'a> Env<'a> {
         self.type_table.put(type_ref);
     }
 
-    fn find_type(&self, type_ref: &TypeRef) -> bool {
-        self.type_table.find(type_ref)
+    fn is_defined_type(&self, type_ref: &TypeRef) -> bool {
+        self.type_table.contains(type_ref)
     }
 
     fn put_function(&mut self, function: Function) {
         self.functions.put(function);
     }
 
-    fn find_function(&self, name: &str) -> bool {
+    fn find_function(&self, name: &str) -> Option<Function> {
         self.functions.find(name)
     }
 
@@ -98,7 +98,7 @@ impl <'a> Env<'a> {
 
 pub fn check_type(ast: &Program) -> Result<()> {
     let mut type_table = TypeTable { entities: generate_c_types() };
-    let mut functions = Functions { names: HashSet::new(), entities: vec![] };
+    let mut functions = Functions { entities: HashMap::new() };
     let global_scope = LocalScope { parent: None, entities: HashMap::new() };
 
     let mut results: Vec<Error> = vec![];
@@ -219,7 +219,37 @@ fn check_expression(env: &Env, exp: &Expression) -> Result<TypeRef> {
             }
         },
         Expression::PostfixExpression { operator, left } => todo!(),
-        Expression::FunctionCallExpression { function_name, arguments } => todo!(),
+        Expression::FunctionCallExpression { function_name, arguments } => {
+            match env.find_function(function_name) {
+                None => {
+                    Err(Error { errors: vec![format!("function `{}` is not defined", function_name)] })
+                },
+                Some(f) => {
+                    if f.parameters.len() != arguments.len() {
+                        return Err(Error { errors: vec![format!("wrong number of arguments, `{}`.", function_name)] })
+                    }
+                    let errors: Vec<String> = f.parameters.iter()
+                        .zip(arguments.iter())
+                        .flat_map(|(param, arg)| {
+                            let result = check_expression(env, arg);
+                            if let Ok(arg_type) = result {
+                                if arg_type != param.type_dec {
+                                    vec![format!("wrong argument type, `{}`.", function_name)]
+                                } else {
+                                    vec![]
+                                }
+                            } else {
+                                result.unwrap_err().errors
+                            }
+                        }).collect();
+                    if errors.is_empty() {
+                        Ok(f.return_type_dec.clone())
+                    } else {
+                        Err(Error { errors })
+                    }
+                },
+            }
+        },
         Expression::InitializerExpression { elements } => todo!(),
         Expression::IndexExpression { left, index } => todo!(),
     }
@@ -234,14 +264,14 @@ fn check_function_declaration(
 ) -> Result<()> {
     let mut results: Vec<Error> = vec![];
 
-    if !env.find_type(return_type_dec) {
+    if !env.is_defined_type(return_type_dec) {
         results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec.type_name())] });
     }
 
     let local_scope = LocalScope { parent: Some(&env.scope), entities: HashMap::new() };
     let mut new_env = Env { type_table: env.type_table, functions: env.functions, scope: local_scope };
     for p in parameters {
-        if !new_env.find_type(&p.type_dec) {
+        if !new_env.is_defined_type(&p.type_dec) {
             results.push(Error { errors: vec![format!("parameter type is not defined: {:?}", p.type_dec.type_name())] });
         }
         new_env.put_vardecl(&p.name, p.type_dec.clone());
@@ -363,6 +393,34 @@ int main() {
             assert_eq!(errors.len(), 2);
             assert_eq!(true, errors[0].starts_with("type error. condition type is"), "actual message: `{}`", errors[0]);
             assert_eq!(true, errors[1].starts_with("type error. right is"), "actual message: `{}`", errors[1]);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_type_error_at_function_call() {
+        // given
+        let input = "
+int inc(int a) {
+    return a + 1;
+}
+int main() {
+    int x = 1;
+    char y = inc(x);
+    return 0;
+}
+";
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!(true, errors[0].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[0]);
         } else {
             assert!(false);
         }
