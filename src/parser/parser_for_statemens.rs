@@ -1,4 +1,4 @@
-use super::{Parser, Result, Error, TokenType, ExpressionPrecedence};
+use super::{Parser, Result, TokenType, ExpressionPrecedence};
 use super::ast::{Statement, TypeRef, Declarator, SwitchBlock, SwitchLabel, SwitchLabelEntry};
 
 impl Parser {
@@ -56,7 +56,7 @@ impl Parser {
                 Ok(result)
             } else {
                 let error_msg = format!("[parse_return_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
-                Err(Error { errors: vec![error_msg] })
+                Err(self.error(error_msg))
             };
         };
     }
@@ -87,7 +87,7 @@ impl Parser {
             return Ok(Statement::VarDecl(declarators));
         } else {
             let error_msg = format!("[parse_vardecl_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
-            return Err(Error { errors: vec![error_msg] });
+            return Err(self.error(error_msg));
         }
     }
 
@@ -99,7 +99,7 @@ impl Parser {
             let stmt = self.parse_statement()?;
             statements.push(stmt);
             if self.peek_token.token_type == TokenType::Illegal {
-                return Err(Error { errors: vec![format!("[parse_block_statement] next token is Illegal, got {:?}", self.peek_token.token_type)] });
+                return Err(self.error(format!("[parse_block_statement] next token is Illegal, got {:?}", self.peek_token.token_type)));
             }
             self.next_token();
         }
@@ -109,7 +109,7 @@ impl Parser {
             return Ok(Statement::Block(statements));
         } else {
             let error_msg = format!("[parse_block_statement] expected next token to be Rbrace, got {:?}", self.cur_token.token_type);
-            return Err(Error { errors: vec![error_msg] });
+            return Err(self.error(error_msg));
         }
     }
 
@@ -120,14 +120,14 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Lparem {
             self.next_token();
         } else {
-            return Err(Error { errors: vec![format!("[parse_if_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_if_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
         }
         let condition = self.parse_expression(ExpressionPrecedence::Lowest)?;
         self.next_token();
         if self.cur_token.token_type == TokenType::Rparem {
             self.next_token();
         } else {
-            return Err(Error { errors: vec![format!("[parse_if_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_if_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
         let consequence = self.parse_statement()?;
         if self.peek_token.token_type != TokenType::Else {
@@ -144,7 +144,7 @@ impl Parser {
     fn parse_switch_statement(&mut self) -> Result<Statement> {
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(Error { errors: vec![format!("[parse_switch_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_switch_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
@@ -152,12 +152,12 @@ impl Parser {
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_switch_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_switch_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Lbrace {
-            return Err(Error { errors: vec![format!("[parse_switch_statement] expected next token to be Lbrace, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_switch_statement] expected next token to be Lbrace, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
@@ -174,7 +174,7 @@ impl Parser {
         let mut switch_label_entry: Vec<SwitchLabelEntry> = vec![];
         loop {
             if self.cur_token.token_type != TokenType::Case && self.cur_token.token_type != TokenType::Default {
-                return Err(Error { errors: vec![format!("[parse_switch_body] expected next token to be Case or Default, got {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_switch_body] expected next token to be Case or Default, got {:?}", self.cur_token.token_type)));
             }
             let mut labels: Vec<SwitchLabel> = vec![];
 
@@ -186,7 +186,7 @@ impl Parser {
                 if self.cur_token.token_type == TokenType::Colon {
                     self.next_token();
                 } else {
-                    return Err(Error { errors: vec![format!("[parse_switch_body] expected next token to be Colon, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_switch_body] expected next token to be Colon, got {:?}", self.cur_token.token_type)));
                 }
                 labels.push(SwitchLabel::Case(label));
             }
@@ -197,7 +197,7 @@ impl Parser {
                 if self.cur_token.token_type == TokenType::Colon {
                     self.next_token();
                 } else {
-                    return Err(Error { errors: vec![format!("[parse_switch_body] expected next token to be Colon, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_switch_body] expected next token to be Colon, got {:?}", self.cur_token.token_type)));
                 }
                 labels.push(SwitchLabel::Default);
             }
@@ -211,7 +211,7 @@ impl Parser {
             // ブロックを処理する
             while self.cur_token.token_type != TokenType::Case && self.cur_token.token_type != TokenType::Default && self.cur_token.token_type != TokenType::Rbrace {
                 if self.cur_token.token_type == TokenType::Eof {
-                    return Err(Error { errors: vec!["[parse_switch_body] unexpected end of file".to_string()] });
+                    return Err(self.error("[parse_switch_body] unexpected end of file".to_string()));
                 }
                 let stmt = self.parse_statement()?;
                 body.push(stmt);
@@ -232,7 +232,7 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(Statement::Break);
         } else {
-            return Err(Error { errors: vec![format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)));
         }
     }
 
@@ -240,7 +240,7 @@ impl Parser {
     fn parse_while_statement(&mut self) -> Result<Statement> {
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_while_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
@@ -248,14 +248,14 @@ impl Parser {
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_while_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
         let body = self.parse_statement()?;
 
         if self.cur_token.token_type != TokenType::Rbrace && self.cur_token.token_type != TokenType::Semicolon {
-            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
         return Ok(Statement::While {
@@ -271,12 +271,12 @@ impl Parser {
 
         self.next_token();
         if self.cur_token.token_type != TokenType::While {
-            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be While, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_dowhile_statement] expected next token to be While, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_dowhile_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
@@ -284,12 +284,12 @@ impl Parser {
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_dowhile_statement] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
         if self.cur_token.token_type != TokenType::Semicolon {
-            return Err(Error { errors: vec![format!("[parse_dowhile_statement] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_dowhile_statement] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
         return Ok(Statement::DoWhile {
@@ -302,7 +302,7 @@ impl Parser {
     fn parse_for_statement(&mut self) -> Result<Statement> {
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(Error { errors: vec![format!("[parse_for_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_for_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
         }
 
         self.next_token();
@@ -313,7 +313,7 @@ impl Parser {
                 let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Semicolon {
-                    return Err(Error { errors: vec![format!("[parse_for_statement -> init] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_for_statement -> init] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)));
                 }
                 some
             };
@@ -325,7 +325,7 @@ impl Parser {
                 let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Semicolon {
-                    return Err(Error { errors: vec![format!("[parse_for_statement -> condition] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_for_statement -> condition] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)));
                 }
                 some
             };
@@ -337,7 +337,7 @@ impl Parser {
                 let some = Some(self.parse_expression(ExpressionPrecedence::Lowest)?);
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Rparem {
-                    return Err(Error { errors: vec![format!("[parse_for_statement -> post] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_for_statement -> post] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
                 }
                 some
             };
@@ -346,7 +346,7 @@ impl Parser {
         let body = self.parse_statement()?;
 
         if self.cur_token.token_type != TokenType::Rbrace && self.cur_token.token_type != TokenType::Semicolon {
-            return Err(Error { errors: vec![format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_for_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
         return Ok(Statement::For {
@@ -363,7 +363,7 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Semicolon {
             return Ok(Statement::Continue);
         } else {
-            return Err(Error { errors: vec![format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)));
         }
     }
 
@@ -376,7 +376,7 @@ impl Parser {
             return Ok(result);
         } else {
             let error_msg = format!("[parse_expression_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
-            return Err(Error { errors: vec![error_msg] });
+            return Err(self.error(error_msg));
         }
     }
 
