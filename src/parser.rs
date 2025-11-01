@@ -64,6 +64,10 @@ impl Parser {
         return program
     }
 
+    fn error(&self, msg: String) -> Error {
+        return Error { errors: vec![format!("error:{}:{}: {}", self.cur_token.row, self.cur_token.col, msg)] };
+    }
+
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.clone();
         self.peek_token = self.l.next_token();
@@ -72,7 +76,7 @@ impl Parser {
 
     fn parse_struct_type(&mut self) -> Result<ast::TypeRef> {
         if self.cur_token.token_type != TokenType::Struct {
-            return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Struct, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_struct] expected current token to be Struct, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
 
@@ -87,7 +91,7 @@ impl Parser {
             // int x; int y; ...
             members = self.parse_struct_decls()?;
             if self.cur_token.token_type != TokenType::Rbrace {
-                return Err(Error { errors: vec![format!("[parse_struct] expected current token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_struct] expected current token to be Rbrace, got {:?}", self.cur_token.token_type)));
             }
             self.next_token();
         }
@@ -98,7 +102,7 @@ impl Parser {
     fn parse_struct_decls(&mut self) -> Result<Vec<ast::StructDecl>> {
         let mut decls: Vec<ast::StructDecl> = vec![];
         if self.cur_token.token_type != TokenType::Lbrace {
-            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Lbrace, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_struct_decls] expected next token to be Lbrace, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
         if self.cur_token.token_type == TokenType::Rbrace {
@@ -110,7 +114,7 @@ impl Parser {
             ast::StructDecl::new,
         )?;
         if self.cur_token.token_type != TokenType::Rbrace {
-            return Err(Error { errors: vec![format!("[parse_struct_decls] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_struct_decls] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)));
         }
         return Ok(decls);
     }
@@ -138,7 +142,7 @@ impl Parser {
             }
 
             if self.cur_token.token_type != TokenType::Ident {
-                return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_type_decls] expected next token to be IDENT, got {:?}", self.cur_token.token_type)));
             }
             let name = self.cur_token.literal();
 
@@ -147,7 +151,7 @@ impl Parser {
                 self.next_token(); // cur_token is `[`
                 self.next_token();
                 if self.cur_token.token_type != TokenType::Rbracket {
-                    return Err(Error { errors: vec![format!("[parse_type_decls] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+                    return Err(self.error(format!("[parse_type_decls] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)));
                 }
                 type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: None };
             }
@@ -172,7 +176,7 @@ impl Parser {
             TypeRef::Named(name) => name.to_string(),
             TypeRef::Struct{ tag_name: _, members: _ } => base_type_dec.type_name(),
             _ => {
-                return Err(Error { errors: vec![format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)] });
+                return Err(self.error(format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)));
             }
         };
         let mut result: Vec<(TypeRef, Declarator)>= vec![];
@@ -186,7 +190,7 @@ impl Parser {
             }
 
             if self.cur_token.token_type != TokenType::Ident {
-                return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be IDENT, got {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_declarators] expected next token to be IDENT, got {:?}", self.cur_token.token_type)));
             }
             let name = self.cur_token.literal();
 
@@ -200,7 +204,7 @@ impl Parser {
                 } else {
                     // <type_ref> <ident>[<size>];
                     if self.cur_token.token_type != TokenType::Integer {
-                        return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Integer, got {:?}", self.cur_token.token_type)] });
+                        return Err(self.error(format!("[parse_declarators] expected next token to be Integer, got {:?}", self.cur_token.token_type)));
                     }
                     let size = self.cur_token.literal()
                         .parse::<u32>()
@@ -208,7 +212,7 @@ impl Parser {
                     type_dec = TypeRef::Array{ type_dec: Box::new(type_dec), size: Some(size) };
                     self.next_token();
                     if self.cur_token.token_type != TokenType::Rbracket {
-                        return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be RBracket, got {:?}", self.cur_token.token_type)] });
+                        return Err(self.error(format!("[parse_declarators] expected next token to be RBracket, got {:?}", self.cur_token.token_type)));
                     }
                 }
             }
@@ -216,7 +220,7 @@ impl Parser {
             let declarator = if self.peek_token.token_type != TokenType::Assign {
                 // 値の指定がない、かつ、サイズが指定されていない配列型の場合はエラー
                 if let TypeRef::Array { type_dec: _, size: None } = type_dec {
-                    return Err(Error { errors: vec![format!("[parse_declarators] expected next token to be Assign, got {:?}", self.peek_token.token_type)] });
+                    return Err(self.error(format!("[parse_declarators] expected next token to be Assign, got {:?}", self.peek_token.token_type)));
                 }
                 ast::Declarator { name, value: None }
             } else {
@@ -235,5 +239,4 @@ impl Parser {
         }
         return Ok(result);
     }
-
 }

@@ -1,6 +1,6 @@
 use crate::parser::ast::Function;
 
-use super::{Parser, Result, Error, TokenType};
+use super::{Parser, Result, TokenType};
 use super::ast::{ExternalItem, TypeRef, Parameter};
 
 impl Parser {
@@ -43,7 +43,7 @@ impl Parser {
                 }
             }
             _ => {
-                return Err(Error { errors: vec![format!("[parse_external_item] expected external item token, got {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_external_item] expected external item token, got {:?}", self.cur_token.token_type)));
             }
         }
     }
@@ -51,21 +51,21 @@ impl Parser {
     fn parse_external_vardecl(&mut self, type_dec: TypeRef) -> Result<ExternalItem> {
         let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
-            return Err(Error { errors: vec![format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)));
         }
         return Ok(ExternalItem::VarDecl(declarators));
     }
 
     fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItem> {
         if self.cur_token.token_type != TokenType::Ident {
-            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)));
         }
         let name = self.cur_token.literal();
 
         self.next_token(); // cur_token is Lparam
         let parameters = self.parse_function_params()?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
@@ -79,7 +79,7 @@ impl Parser {
     fn parse_function_params(&mut self) -> Result<Vec<Parameter>> {
         let mut parameters: Vec<Parameter> = vec![];
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Lparem, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_function_params] expected next token to be Lparem, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
         if self.cur_token.token_type == TokenType::Rparem {
@@ -91,7 +91,7 @@ impl Parser {
             Parameter::new,
         )?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
         return Ok(parameters);
     }

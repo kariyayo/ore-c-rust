@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use super::{Parser, Result, Error, TokenType};
+use super::{Parser, Result, TokenType};
 use super::ast::{Expression};
 
 // 式の優先順位。
@@ -119,7 +119,7 @@ impl Parser {
         let prefix_result = self.prefix();
         match prefix_result {
             None => {
-                return Err(Error { errors: vec![format!("[parse_expression] no prefix parse function for {:?}", self.cur_token.token_type)] });
+                return Err(self.error(format!("[parse_expression] no prefix parse function for {:?}", self.cur_token.token_type)));
             }
             Some(Err(e)) => {
                 return Err(e);
@@ -212,13 +212,13 @@ impl Parser {
     pub(super) fn parse_integer_literal(&self) -> Result<Expression> {
         return self.cur_token.literal().parse()
             .map(|value| Expression::Int(value))
-            .map_err(|_| Error { errors: vec!["[parse_integer_literal] parse int error".to_string()] });
+            .map_err(|_| self.error("[parse_integer_literal] parse int error".to_string()));
     }
 
     pub(super) fn parse_character_literal(&self) -> Result<Expression> {
         return self.cur_token.literal().parse()
             .map(|value| Expression::CharacterLiteral(value))
-            .map_err(|_| Error { errors: vec![format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()] });
+            .map_err(|_| self.error(format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()));
     }
 
     pub(super) fn parse_string_literal(&self) -> Result<Expression> {
@@ -229,7 +229,7 @@ impl Parser {
         self.next_token();
         let exp = self.parse_expression(ExpressionPrecedence::Lowest);
         if self.peek_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_grouped_expression] expected next token to be Rparem, got {:?}", self.peek_token.token_type)] });
+            return Err(self.error(format!("[parse_grouped_expression] expected next token to be Rparem, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
         return exp;
@@ -251,7 +251,7 @@ impl Parser {
             self.next_token(); // `,` を読み飛ばす
         }
         if self.cur_token.token_type != TokenType::Rbrace {
-            return Err(Error { errors: vec![format!("[parse_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)));
         }
         return Ok(Expression::InitializerExpression { elements });
     }
@@ -273,7 +273,7 @@ impl Parser {
         let function_name = match left {
             Expression::Identifier(value) => value,
             _ => {
-                return Err(Error { errors: vec![format!("[parse_function_call_expression] expected `left` to be Expression::Identifier, got {:?}", left)] });
+                return Err(self.error(format!("[parse_function_call_expression] expected `left` to be Expression::Identifier, got {:?}", left)));
             }
         };
         let mut arguments: Vec<Expression> = vec![];
@@ -291,7 +291,7 @@ impl Parser {
             }
         }
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(Error { errors: vec![format!("[parse_function_call_expression] expected next token to be Rparem, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_function_call_expression] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
         return Ok(Expression::FunctionCallExpression { function_name, arguments });
     }
@@ -301,7 +301,7 @@ impl Parser {
         let right = self.parse_expression(ExpressionPrecedence::Lowest)?;
         self.next_token();
         if self.cur_token.token_type != TokenType::Rbracket {
-            return Err(Error { errors: vec![format!("[parse_index_expression] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)] });
+            return Err(self.error(format!("[parse_index_expression] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)));
         }
         return Ok(Expression::IndexExpression {
             left: Box::new(left),
