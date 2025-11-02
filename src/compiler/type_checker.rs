@@ -39,6 +39,9 @@ impl TypeTable {
     fn put(&mut self, type_ref: TypeRef) {
         self.entities.insert(type_ref);
     }
+    fn find(&self, name: &str) -> Option<TypeRef> {
+        self.entities.iter().find(|elm| { elm.type_name() == name }).cloned()
+    }
     fn contains(&self, type_ref: &TypeRef) -> bool {
         self.entities.contains(type_ref)
     }
@@ -88,8 +91,24 @@ impl <'a> Env<'a> {
         self.type_table.put(type_ref);
     }
 
+    fn find_type(&self, name: &str) -> Option<TypeRef> {
+        self.type_table.find(name)
+    }
+
     fn is_defined_type(&self, type_ref: &TypeRef) -> bool {
-        self.type_table.contains(type_ref)
+        match type_ref {
+            TypeRef::Named(_) | TypeRef::Struct { .. } => {
+                self.type_table.contains(type_ref)
+            },
+            // TODO:
+            TypeRef::Pointer(type_ref) => {
+                self.type_table.contains(type_ref)
+            }
+            // TODO:
+            TypeRef::Array { type_dec, .. } => {
+                self.type_table.contains(type_dec)
+            },
+        }
     }
 
     fn put_function(&mut self, function: Function) {
@@ -121,8 +140,24 @@ pub fn check_type(ast: &Program) -> Result<()> {
         let (item, external_item_loc) = item_node;
         match item {
             ExternalItem::Struct(type_ref) => {
-                // TODO: check struct's fields
-                env.put_type(type_ref.clone());
+                // 宣言と初期化子のフィールドをチェックする
+                if let TypeRef::Struct { tag_name: _, members } = type_ref {
+                    let es: Vec<Error> = members.iter().filter_map(|member| {
+                        if env.is_defined_type(&member.type_dec) {
+                            None
+                        } else {
+                            Some(Error::new(external_item_loc, format!("struct member's type is not defined: {:?}", member.type_dec.type_name())))
+                            // Some(Error { errors: vec![format!("struct member's type is not defined: {:?}", member.type_dec.type_name())] })
+                        }
+                    }).collect();
+                    if es.len() > 0 {
+                        results.extend(es);
+                    } else {
+                        env.put_type(type_ref.clone());
+                    }
+                } else {
+                    panic!("ExternalItem::Struct type_ref should be TypeRef::Struct, but is {:?}", type_ref);
+                }
             },
             ExternalItem::VarDecl(items) => {
                 for (type_ref, decl) in items {
@@ -233,7 +268,34 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                     check_basic_calc_operator(env, left, right)
                 }
                 "[" => todo!(),
-                "." => todo!(),
+                "." => {
+                    // ".", "->" の左側オペランドが、structの定義に含まれているかチェック
+                    let left_type = check_expression(env, left)?;
+                    let struct_defined = env.find_type(&left_type.type_name());
+                    struct_defined
+                        .ok_or(Error::new(&left.as_ref().1, format!("struct `{}` is not defined", left_type.type_name())))
+                        .and_then(|def| {
+                            let TypeRef::Struct { tag_name: _, members: defined_members } = def else {
+                                return Err(Error::new(&left.as_ref().1, format!("type `{}` is not struct.", left_type.type_name())));
+                            };
+                            // ".", "->" の右側オペランドが、structのフィールド定義に含まれているかチェック
+                            let (Expression::Identifier(operand_member), _) = right.as_ref() else {
+                                return Err(Error::new(&right.as_ref().1, format!("right is not Identifier. right: {}", right.as_ref().0)));
+                            };
+                            if let Some(defined) = defined_members.iter().find(|m| m.name == operand_member.to_string()) {
+                                Ok(defined.type_dec.clone())
+                            } else {
+                                Err(Error::new(
+                                    &right.as_ref().1,
+                                    format!(
+                                        "field `{}` is not defined. defined: {}",
+                                        operand_member,
+                                        defined_members.into_iter().map(|m| m.name.to_string()).collect::<Vec<String>>().join(", ")
+                                    ),
+                                ))
+                            }
+                        })
+                },
                 "->" => todo!(),
                 _ => {
                     let left_type = check_expression(env, left)?;
@@ -479,6 +541,33 @@ int main() {
             assert_eq!("error:15:17: wrong number of arguments, `inc`.", errors[5]);
         } else {
             assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_check_valid_struct() {
+        // given
+        let input = r#"
+struct person {
+    int age;
+};
+
+int main() {
+    struct person p;
+    p.age = 20;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert!(false);
+        } else {
+            assert!(true);
         }
     }
 }
