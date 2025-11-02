@@ -16,12 +16,14 @@ impl TypeRef {
             TypeRef::Array { type_dec: type_ref, size } => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
             TypeRef::Struct { tag_name, members } => {
                 if members.len() == 0 {
-                    format!( "struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
+                    format!("struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
+                } else if tag_name.is_some() {
+                    format!("struct {}", tag_name.as_ref().unwrap())
                 } else {
                     let members_string = members.iter()
                         .map(|StructDecl{ type_dec, name }| type_dec.type_name() + " " + name)
                         .fold("\n".to_string(), |acc, x| acc + &format!("    {};\n", x));
-                    format!( "struct {}{{{}}}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string() + " "), members_string)
+                    format!("struct {{{}}}", members_string)
                 }
             }
         }
@@ -46,20 +48,12 @@ impl fmt::Display for StructDecl {
     }
 }
 
-/// トップレベルの宣言・定義を表すノード
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ExternalItem {
-    FunctionDecl(Function),
-    Struct(TypeRef),
-    VarDecl(Vec<(TypeRef, Declarator)>),
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Function {
     pub return_type_dec: TypeRef,
     pub name: String,
     pub parameters: Vec<Parameter>,
-    pub body: Option<Box<Statement>>,
+    pub body: Option<Box<StatementNode>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -77,29 +71,44 @@ impl Parameter {
 /// ASTのルートノード
 #[derive(Debug, PartialEq, Eq)]
 pub struct Program {
-    pub external_items: Vec<ExternalItem>,
+    pub external_item_nodes: Vec<ExternalItemNode>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct Loc { pub row: usize, pub col: usize }
+
+/// トップレベルの宣言・定義を表すノード
+pub type ExternalItemNode = (ExternalItem, Loc);
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ExternalItem {
+    FunctionDecl(Function),
+    Struct(TypeRef),
+    VarDecl(Vec<(TypeRef, Declarator)>),
 }
 
 /// 文を表すノード
+pub type StatementNode = (Statement, Loc);
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Statement {
-    Return(Option<Expression>),
+    Return(Option<ExpressionNode>),
     Break,
     Continue,
     VarDecl(Vec<(TypeRef, Declarator)>),
-    Block(Vec<Statement>),
-    If { condition: Expression, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
-    Switch { condition: Expression, switch_block: SwitchBlock },
-    While { condition: Expression, body: Box<Statement> },
-    DoWhile { body: Box<Statement>, condition: Expression },
-    For { init: Option<Expression>, condition: Option<Expression>, post: Option<Expression>, body: Box<Statement> },
-    ExpressionStatement(Expression),
+    Block(Vec<StatementNode>),
+    If { condition: ExpressionNode, consequence: Box<StatementNode>, alternative: Option<Box<StatementNode>> },
+    Switch { condition: ExpressionNode, switch_block: SwitchBlock },
+    While { condition: ExpressionNode, body: Box<StatementNode> },
+    DoWhile { body: Box<StatementNode>, condition: ExpressionNode },
+    For { init: Option<ExpressionNode>, condition: Option<ExpressionNode>, post: Option<ExpressionNode>, body: Box<StatementNode> },
+    ExpressionStatement(ExpressionNode),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Declarator {
     pub name: String,
-    pub value: Option<Expression>,
+    pub value: Option<ExpressionNode>,
 }
 
 /// fallthrough に対応するため、switchブロック内の文を全てbodyにまとめておき、
@@ -131,7 +140,7 @@ pub struct Declarator {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SwitchBlock {
     pub label_entries: Vec<SwitchLabelEntry>,
-    pub body: Vec<Statement>,
+    pub body: Vec<StatementNode>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -142,28 +151,30 @@ pub struct SwitchLabelEntry {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SwitchLabel {
-    Case(Expression),
+    Case(ExpressionNode),
     Default,
 }
 
 /// 式を表すノード
+pub type ExpressionNode = (Expression, Loc);
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression {
     Int(i32),
     CharacterLiteral(char),
     StringLiteral(String),
     Identifier(String),
-    PrefixExpression { operator: String, right: Box<Expression> },
-    InfixExpression { operator: String, left: Box<Expression>, right: Box<Expression> },
-    PostfixExpression { operator: String, left: Box<Expression> },
-    FunctionCallExpression { function_name: String, arguments: Vec<Expression> },
-    InitializerExpression { elements: Vec<Expression> },
-    IndexExpression { left: Box<Expression>, index: Box<Expression> },
+    PrefixExpression { operator: String, right: Box<ExpressionNode> },
+    InfixExpression { operator: String, left: Box<ExpressionNode>, right: Box<ExpressionNode> },
+    PostfixExpression { operator: String, left: Box<ExpressionNode> },
+    FunctionCallExpression { function_name: String, arguments: Vec<ExpressionNode> },
+    InitializerExpression { elements: Vec<ExpressionNode> },
+    IndexExpression { left: Box<ExpressionNode>, index: Box<ExpressionNode> },
 }
 
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.external_items)
+        write!(f, "{:?}", self.external_item_nodes)
     }
 }
 
@@ -172,7 +183,7 @@ impl fmt::Display for Statement {
         return match self {
             Statement::Return(value) => {
                 match value {
-                    Some(v) => write!(f, "return {};", v.to_string()),
+                    Some((v, _)) => write!(f, "return {};", v.to_string()),
                     None => write!(f, "return;"),
                 }
             },
@@ -183,7 +194,7 @@ impl fmt::Display for Statement {
                 for (type_ref, declarator) in declarators {
                     let mut s = format!("{} {}", type_ref.type_name(), declarator.name);
                     if let Some(value) = &declarator.value {
-                        s.push_str(&format!(" = {}", value.to_string()));
+                        s.push_str(&format!(" = {}", value.0.to_string()));
                     }
                     parts.push(s);
                 }
@@ -191,29 +202,29 @@ impl fmt::Display for Statement {
             },
             Statement::Block(statements) => {
                 let mut result = "{\n".to_string();
-                for stmt in statements {
+                for (stmt, _) in statements {
                     result.push_str(&format!("    {}\n", stmt.to_string()));
                 }
                 result.push_str("}");
                 write!(f, "{}", result)
             },
             Statement::If { condition, consequence, alternative } => {
-                let mut result = format!("if ({}) {}", condition.to_string(), consequence.to_string());
+                let mut result = format!("if ({}) {}", condition.0.to_string(), consequence.0.to_string());
                 match alternative {
                     Some(alt) => {
-                        result.push_str(&format!(" else {}", alt.to_string()));
+                        result.push_str(&format!(" else {}", alt.0.to_string()));
                     },
                     None => {},
                 }
                 write!(f, "{}", result)
             },
             Statement::Switch { condition, switch_block: switch_body } => {
-                let mut result = format!("switch ({}) {{\n", condition.to_string());
+                let mut result = format!("switch ({}) {{\n", condition.0.to_string());
                 for label_entry in &switch_body.label_entries {
                     for label in &label_entry.labels {
                         match label {
                             SwitchLabel::Case(expr) => {
-                                result.push_str(&format!("    case {}:\n", expr.to_string()));
+                                result.push_str(&format!("    case {}:\n", expr.0.to_string()));
                             },
                             SwitchLabel::Default => {
                                 result.push_str("    default:\n");
@@ -221,35 +232,35 @@ impl fmt::Display for Statement {
                         }
                     }
                     for stmt in &switch_body.body[label_entry.start_index as usize..] {
-                        result.push_str(&format!("        {}\n", stmt.to_string()));
+                        result.push_str(&format!("        {}\n", stmt.0.to_string()));
                     }
                 }
                 result.push_str("}");
                 write!(f, "{}", result)
             },
             Statement::While { condition, body } => {
-                write!(f, "while ({}) {}", condition.to_string(), body.to_string())
+                write!(f, "while ({}) {}", condition.0.to_string(), body.0.to_string())
             },
             Statement::DoWhile { body, condition } => {
-                write!(f, "do {} while ({});", body.to_string(), condition.to_string())
+                write!(f, "do {} while ({});", body.0.to_string(), condition.0.to_string())
             },
             Statement::For { init, condition, post, body } => {
                 let init_str = match init {
-                    Some(i) => i.to_string(),
+                    Some(i) => i.0.to_string(),
                     None => "".to_string(),
                 };
                 let condition_str = match condition {
-                    Some(c) => c.to_string(),
+                    Some(c) => c.0.to_string(),
                     None => "".to_string(),
                 };
                 let post_str = match post {
-                    Some(p) => p.to_string(),
+                    Some(p) => p.0.to_string(),
                     None => "".to_string(),
                 };
-                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.to_string())
+                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.0.to_string())
             },
             Statement::ExpressionStatement(expression) => {
-                write!(f, "{};", expression.to_string())
+                write!(f, "{};", expression.0.to_string())
             },
         };
     }
@@ -263,24 +274,24 @@ impl fmt::Display for Expression {
             Expression::StringLiteral(value) => write!(f, "{}", value),
             Expression::Identifier(value) => write!(f, "{}", value),
             Expression::PrefixExpression { operator, right } => {
-                write!(f, "({}{})", operator, right.to_string())
+                write!(f, "({}{})", operator, right.0.to_string())
             },
             Expression::InfixExpression { operator, left, right } => {
-                write!(f, "({} {} {})", left.to_string(), operator, right.to_string())
+                write!(f, "({} {} {})", left.0.to_string(), operator, right.0.to_string())
             },
             Expression::PostfixExpression { operator, left } => {
-                write!(f, "({}{})", left.to_string(), operator)
+                write!(f, "({}{})", left.0.to_string(), operator)
             },
             Expression::FunctionCallExpression { function_name, arguments } => {
-                let args: Vec<String> = arguments.iter().map(|arg| arg.to_string()).collect();
+                let args: Vec<String> = arguments.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{}({})", function_name, args.join(", "))
             },
             Expression::InitializerExpression { elements } => {
-                let args: Vec<String> = elements.iter().map(|arg| arg.to_string()).collect();
+                let args: Vec<String> = elements.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{{{}}}", args.join(", "))
             },
             Expression::IndexExpression { left, index } => {
-                write!(f, "({}[{}])", left.to_string(), index.to_string())
+                write!(f, "({}[{}])", left.0.to_string(), index.0.to_string())
             },
         }
     }

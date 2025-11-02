@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::parser::ast::{Expression, ExternalItem, Function, Parameter, Program, Statement, TypeRef};
+use crate::parser::ast::{Expression, ExpressionNode, ExternalItem, Function, Parameter, Program, Statement, StatementNode, TypeRef};
 
 #[derive(Debug)]
 pub struct Error {
@@ -71,7 +71,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
     let mut functions = Functions { entities: HashSet::new() };
     let mut global_scope = LocalScope { parent: None, entities: HashSet::new() };
 
-    for item in &ast.external_items {
+    for item_node in &ast.external_item_nodes {
+        let (item, _) = item_node;
         match item {
             ExternalItem::Struct(TypeRef::Struct { tag_name: Some(tag_name), members }) => {
                 let s = format!("struct {}", tag_name);
@@ -92,8 +93,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
 
     println!("@@@@ check_function types: {:?}, functions: {:?}, global_scope: {:?}", types, functions, &global_scope);
 
-    let results: Vec<Error> = ast.external_items.iter()
-        .filter_map(|item| {
+    let results: Vec<Error> = ast.external_item_nodes.iter()
+        .filter_map(|(item, _)| {
             if let ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body }) = item {
                 Some(check_function(
                     // &types,
@@ -123,7 +124,7 @@ fn check_function(
     return_type_dec: &TypeRef,
     name: &str,
     parameters: &Vec<Parameter>,
-    body: &Option<Box<Statement>>,
+    body: &Option<Box<StatementNode>>,
 ) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
     println!("@@@@ check_function ::: return_type_dec: {:?}, name: {:?}, parameters: {:?}", return_type_dec.type_name(), name, parameters);
@@ -158,9 +159,10 @@ fn check_statement(
     // types: &Types,
     functions: &Functions,
     scope: &mut LocalScope,
-    stmt: &Statement,
+    stmt_node: &StatementNode,
 ) -> Vec<Result<()>> {
     println!("@@@@ check_statement ::: local_scope: {:?}", scope);
+    let (stmt, _) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
             if let Some(exp) = expression {
@@ -247,8 +249,9 @@ fn check_statement(
 fn check_expression(
     functions: &Functions,
     scope: &LocalScope,
-    exp: &Expression,
+    exp_node: &ExpressionNode,
 ) -> Result<()> {
+    let (exp, _) = exp_node;
     match exp {
         Expression::Int(_) => Ok(()),
         Expression::CharacterLiteral(_) => Ok(()),
@@ -276,13 +279,13 @@ fn check_expression(
             if !functions.find(function_name) {
                 return Err(Error { errors: vec![format!("function `{}` is not defined", function_name)] });
             }
-            for arg in arguments {
+            for arg in arguments.iter() {
                 check_expression(functions, scope, arg)?;
             }
             Ok(())
         },
         Expression::InitializerExpression { elements } => {
-            for element in elements {
+            for element in elements.iter() {
                 check_expression(functions, scope, element)?;
             }
             Ok(())

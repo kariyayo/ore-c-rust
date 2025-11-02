@@ -15,6 +15,12 @@ struct Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+impl Token {
+    fn loc(&self) -> ast::Loc {
+        ast::Loc { row: self.row, col: self.col }
+    }
+}
+
 pub struct Parser {
     l: Lexer,
 
@@ -42,12 +48,12 @@ impl Parser {
     }
 
     pub fn parse_program(&mut self) -> ast::Program {
-        let mut program = ast::Program { external_items: vec![] };
+        let mut program = ast::Program { external_item_nodes: vec![] };
         while self.cur_token.token_type != TokenType::Eof {
             let external_item = self.parse_external_item();
             match external_item {
                 Ok(item) => {
-                    program.external_items.push(item);
+                    program.external_item_nodes.push(item);
                 }
                 Err(e) => {
                     for msg in e.errors.iter() {

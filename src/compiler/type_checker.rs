@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, fmt};
 
-use crate::parser::ast::{Declarator, Expression, ExternalItem, Function, Parameter, Program, Statement, TypeRef};
+use crate::parser::ast::{Declarator, Expression, ExpressionNode, ExternalItem, Function, Parameter, Program, Statement, StatementNode, TypeRef};
 
 #[derive(Debug)]
 pub struct Error {
@@ -104,7 +104,8 @@ pub fn check_type(ast: &Program) -> Result<()> {
     let mut results: Vec<Error> = vec![];
     let mut env = Env { type_table: &mut type_table, functions: &mut functions, scope: global_scope };
 
-    for item in &ast.external_items {
+    for item_node in &ast.external_item_nodes {
+        let (item, _) = item_node;
         match item {
             ExternalItem::Struct(type_ref) => {
                 // TODO: check struct's fields
@@ -135,8 +136,9 @@ pub fn check_type(ast: &Program) -> Result<()> {
     Err(Error { errors: results.into_iter().flat_map(|e| e.errors).collect() })
 }
 
-fn check_statement(env: &mut Env, stmt: &Statement) -> Vec<Error> {
+fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
+    let (stmt, _) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
             if let Some(exp) = expression {
@@ -191,7 +193,8 @@ fn check_statement(env: &mut Env, stmt: &Statement) -> Vec<Error> {
     results
 }
 
-fn check_expression(env: &Env, exp: &Expression) -> Result<TypeRef> {
+fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
+    let (exp, _) = exp_node;
     match exp {
         Expression::Int(_) => {
             Ok(TypeRef::Named("int".to_string()))
@@ -281,7 +284,7 @@ fn check_function_declaration(
     return_type_dec: &TypeRef,
     name: &str,
     parameters: &Vec<Parameter>,
-    body: &Option<Box<Statement>>,
+    body: &Option<Box<StatementNode>>,
 ) -> Result<()> {
     let mut results: Vec<Error> = vec![];
 
@@ -319,7 +322,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator) -> Result<
     Ok(type_ref.clone())
 }
 
-fn check_basic_calc_operator(env: &Env, left: &Expression, right: &Expression) -> Result<TypeRef> {
+fn check_basic_calc_operator(env: &Env, left: &ExpressionNode, right: &ExpressionNode) -> Result<TypeRef> {
     let mut errors: Vec<String> = vec![];
     let left_type = check_expression(env, left)?;
     if left_type.type_name() != "int" {

@@ -1,10 +1,10 @@
 use super::{Parser, Result, TokenType, ExpressionPrecedence};
-use super::ast::{Statement, TypeRef, Declarator, SwitchBlock, SwitchLabel, SwitchLabelEntry};
+use super::ast::{Statement, StatementNode, TypeRef, Declarator, SwitchBlock, SwitchLabel, SwitchLabelEntry};
 
 impl Parser {
 
     // 文をパースする
-    fn parse_statement(&mut self) -> Result<Statement> {
+    fn parse_statement(&mut self) -> Result<StatementNode> {
         let result = match self.cur_token.token_type {
             TokenType::Return => {
                 self.parse_return_statement()
@@ -44,16 +44,17 @@ impl Parser {
     }
 
     // return <expression>;
-    fn parse_return_statement(&mut self) -> Result<Statement> {
+    fn parse_return_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::Return(None));
+            return Ok((Statement::Return(None), loc));
         } else {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
             let result = Statement::Return(Some(value));
             self.next_token();
             return if self.cur_token.token_type == TokenType::Semicolon {
-                Ok(result)
+                Ok((result, loc))
             } else {
                 let error_msg = format!("[parse_return_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
                 Err(self.error(error_msg))
@@ -69,7 +70,8 @@ impl Parser {
     // <type_ref> <ident>[] = {<expression>, <expression>, ...};
     //
     // ex) int a, *b, c[10];
-    fn parse_vardecl_statement(&mut self) -> Result<Statement> {
+    fn parse_vardecl_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         let type_dec = if self.cur_token.token_type == TokenType::Struct {
             self.parse_struct_type()?
         } else {
@@ -84,15 +86,16 @@ impl Parser {
                 self.parse_declarators(&type_dec)?
             };
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::VarDecl(declarators));
+            Ok((Statement::VarDecl(declarators), loc))
         } else {
             let error_msg = format!("[parse_vardecl_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
-            return Err(self.error(error_msg));
+            Err(self.error(error_msg))
         }
     }
 
     // { <statement>* }
-    pub(super) fn parse_block_statement(&mut self) -> Result<Statement> {
+    pub(super) fn parse_block_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         let mut statements = vec![];
         while self.cur_token.token_type != TokenType::Rbrace && self.peek_token.token_type != TokenType::Eof {
@@ -104,18 +107,19 @@ impl Parser {
             self.next_token();
         }
         if self.cur_token.token_type == TokenType::Eof {
-            return Ok(Statement::Block(statements));
+            Ok((Statement::Block(statements), loc))
         } else if self.cur_token.token_type == TokenType::Rbrace {
-            return Ok(Statement::Block(statements));
+            Ok((Statement::Block(statements), loc))
         } else {
             let error_msg = format!("[parse_block_statement] expected next token to be Rbrace, got {:?}", self.cur_token.token_type);
-            return Err(self.error(error_msg));
+            Err(self.error(error_msg))
         }
     }
 
     // if (<expression>) <block_statement> | <expression_statement>
     // if (<expression>) <block_statement> | <expression_statement> else <block_statement> | <expression_statement>
-    fn parse_if_statement(&mut self) -> Result<Statement> {
+    fn parse_if_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Lparem {
             self.next_token();
@@ -131,17 +135,18 @@ impl Parser {
         }
         let consequence = self.parse_statement()?;
         if self.peek_token.token_type != TokenType::Else {
-            return Ok(Statement::If { condition, consequence: Box::new(consequence), alternative: None });
+            Ok((Statement::If { condition, consequence: Box::new(consequence), alternative: None }, loc))
         } else {
             self.next_token(); // read `}` or `;`
             self.next_token(); // read `else`
             let alternative = self.parse_statement()?;
-            return Ok(Statement::If { condition, consequence: Box::new(consequence), alternative: Some(Box::new(alternative)) });
+            Ok((Statement::If { condition, consequence: Box::new(consequence), alternative: Some(Box::new(alternative)) }, loc))
         }
     }
 
     // switch (<expression>) { case <value>: <statement>* case <value>: <statement>* ... default: <statement>* }
-    fn parse_switch_statement(&mut self) -> Result<Statement> {
+    fn parse_switch_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
             return Err(self.error(format!("[parse_switch_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
@@ -162,14 +167,11 @@ impl Parser {
 
         self.next_token();
         let switch_body = self.parse_switch_body()?;
-        return Ok(Statement::Switch {
-            condition,
-            switch_block: switch_body,
-        });
+        Ok((Statement::Switch { condition, switch_block: switch_body }, loc))
     }
 
     fn parse_switch_body(&mut self) -> Result<SwitchBlock> {
-        let mut body: Vec<Statement> = vec![];
+        let mut body: Vec<StatementNode> = vec![];
         let mut body_index = 0;
         let mut switch_label_entry: Vec<SwitchLabelEntry> = vec![];
         loop {
@@ -227,17 +229,19 @@ impl Parser {
     }
 
     // break;
-    fn parse_break_statement(&mut self) -> Result<Statement> {
+    fn parse_break_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::Break);
+            return Ok((Statement::Break, loc));
         } else {
             return Err(self.error(format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)));
         }
     }
 
     // while (<expression>) <block_statement> | <expression_statement>
-    fn parse_while_statement(&mut self) -> Result<Statement> {
+    fn parse_while_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
             return Err(self.error(format!("[parse_while_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
@@ -258,14 +262,12 @@ impl Parser {
             return Err(self.error(format!("[parse_while_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
-        return Ok(Statement::While {
-            condition,
-            body: Box::new(body),
-        });
+        Ok((Statement::While { condition, body: Box::new(body) }, loc))
     }
 
     // do <block_statement> while (<expression>) | do <expression_statement> while (<expression>);
-    fn parse_dowhile_statement(&mut self) -> Result<Statement> {
+    fn parse_dowhile_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         let body = self.parse_statement()?;
 
@@ -292,14 +294,12 @@ impl Parser {
             return Err(self.error(format!("[parse_dowhile_statement] expected next token to be Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
-        return Ok(Statement::DoWhile {
-            body: Box::new(body),
-            condition,
-        });
+        Ok((Statement::DoWhile { body: Box::new(body), condition }, loc))
     }
 
     // for (<expression>; <expression>; <expression>) <block_statement> | <expression_statement>
-    fn parse_for_statement(&mut self) -> Result<Statement> {
+    fn parse_for_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type != TokenType::Lparem {
             return Err(self.error(format!("[parse_for_statement] expected next token to be Lparem, got {:?}", self.cur_token.token_type)));
@@ -349,34 +349,34 @@ impl Parser {
             return Err(self.error(format!("[parse_for_statement] expected next token to be RBrace or Semicolon, got {:?}", self.cur_token.token_type)));
         }
 
-        return Ok(Statement::For {
-            init,
-            condition,
-            post,
-            body: Box::new(body),
-        });
+        Ok((
+            Statement::For { init, condition, post, body: Box::new(body) },
+            loc,
+        ))
     }
 
     // continue;
-    fn parse_continue_statement(&mut self) -> Result<Statement> {
+    fn parse_continue_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(Statement::Continue);
+            Ok((Statement::Continue, loc))
         } else {
-            return Err(self.error(format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)));
+            Err(self.error(format!("expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)))
         }
     }
 
     // <expression>;
-    fn parse_expression_statement(&mut self) -> Result<Statement> {
+    fn parse_expression_statement(&mut self) -> Result<StatementNode> {
+        let loc = self.cur_token.loc();
         let expression = self.parse_expression(ExpressionPrecedence::Lowest);
         let result = expression.map(|exp| Statement::ExpressionStatement(exp))?;
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok(result);
+            Ok((result, loc))
         } else {
             let error_msg = format!("[parse_expression_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
-            return Err(self.error(error_msg));
+            Err(self.error(error_msg))
         }
     }
 
@@ -385,7 +385,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
 
-    use crate::{lexer::Lexer, parser::ast::Expression};
+    use crate::{lexer::Lexer, parser::ast::Expression, parser::ast::Loc};
     use super::*;
 
     #[test]
@@ -420,7 +420,7 @@ struct User a = { 1, 2 };
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -433,7 +433,7 @@ struct User a = { 1, 2 };
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
-                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x| x.to_string()));
+                        assert_eq!(declarator.value.as_ref().map(|x| x.0.to_string()), expected_value.map(|x| x.to_string()));
                     }
                 }
                 _ => panic!("Statement is not VarDecl"),
@@ -454,7 +454,7 @@ return 9876;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -462,9 +462,9 @@ return 9876;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::Return(value) => {
+                Statement::Return(Some((value, _))) => {
                     let expected_value= expected[row_num];
-                    assert_eq!(value, &Some(Expression::Int(expected_value)));
+                    assert_eq!(value, &Expression::Int(expected_value));
                 }
                 _ => panic!("Statement is not Return"),
             }
@@ -484,7 +484,7 @@ foobar;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -492,7 +492,7 @@ foobar;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement(expression) => {
+                Statement::ExpressionStatement((expression, _)) => {
                     let expected_value= expected[row_num];
                     assert_eq!(expression, &Expression::Identifier(expected_value.to_string()));
                 }
@@ -519,7 +519,7 @@ foobar;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -527,10 +527,10 @@ foobar;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement(Expression::PrefixExpression { operator, right }) => {
+                Statement::ExpressionStatement((Expression::PrefixExpression { operator, right }, _)) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
-                    assert_eq!(right.as_ref(), expected_right);
+                    assert_eq!(right.as_ref().0, *expected_right);
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
             }
@@ -579,7 +579,7 @@ a %= 3;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -587,11 +587,11 @@ a %= 3;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement(Expression::InfixExpression { operator, left, right }) => {
+                Statement::ExpressionStatement((Expression::InfixExpression { operator, left, right }, _)) => {
                     let (expected_operator, expected_left, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
-                    assert_eq!(left.as_ref(), expected_left);
-                    assert_eq!(right.as_ref(), expected_right);
+                    assert_eq!(left.0, *expected_left);
+                    assert_eq!(right.0, *expected_right);
                 }
                 _ => panic!("Statement is not ExpressionStatement"),
             }
@@ -619,7 +619,7 @@ if (x < y) x + 2; else y;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -629,9 +629,9 @@ if (x < y) x + 2; else y;
             match stmt {
                 Statement::If { condition, consequence, alternative } => {
                     let (expected_condition, expected_consequence, expected_alternative) = expected[row_num];
-                    assert_eq!(condition.to_string(), expected_condition.to_string());
-                    assert_eq!(consequence.to_string(), expected_consequence.to_string());
-                    assert_eq!(alternative.as_ref().map(|a| a.to_string()), expected_alternative.map(|a| a.to_string()));
+                    assert_eq!(condition.0.to_string(), expected_condition.to_string());
+                    assert_eq!(consequence.0.to_string(), expected_consequence.to_string());
+                    assert_eq!(alternative.as_ref().map(|a| a.0.to_string()), expected_alternative.map(|a| a.to_string()));
                 }
                 _ => panic!("Statement is not If"),
             }
@@ -670,7 +670,7 @@ case 3:
         let mut parse_results: Vec<Statement> = vec![];
         let rows_count = 2;
         for _ in 0..rows_count {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -681,47 +681,47 @@ case 3:
 
         // 1つ目のswitch文のチェック
         if let Statement::Switch { condition, switch_block } = stmt1 {
-            assert_eq!(condition.to_string(), "a");
+            assert_eq!(condition.0.to_string(), "a");
             // 各ラベルのチェック
             assert_eq!(switch_block.label_entries.len(), 4);
-            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int(1)));
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case((Expression::Int(1), Loc { row: 3, col: 10 })));
             assert_eq!(switch_block.label_entries[0].start_index, 0);
-            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int(2)));
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case((Expression::Int(2), Loc { row: 6, col: 10 })));
             assert_eq!(switch_block.label_entries[1].start_index, 2);
-            assert_eq!(switch_block.label_entries[2].labels[0], SwitchLabel::Case(Expression::Int(3)));
+            assert_eq!(switch_block.label_entries[2].labels[0], SwitchLabel::Case((Expression::Int(3), Loc { row: 9, col: 10 })));
             assert_eq!(switch_block.label_entries[2].start_index, 4);
             assert_eq!(switch_block.label_entries[3].labels[0], SwitchLabel::Default);
             assert_eq!(switch_block.label_entries[3].start_index, 6);
 
             assert_eq!(switch_block.body.len(), 7);
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[0] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[0].0 {
                 assert_eq!(expression, &Expression::Identifier("x".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            match &switch_block.body[1] {
+            match &switch_block.body[1].0 {
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[2] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[2].0 {
                 assert_eq!(expression, &Expression::Identifier("y".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            match &switch_block.body[3] {
+            match &switch_block.body[3].0 {
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[4] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[4].0 {
                 assert_eq!(expression, &Expression::Identifier("aaa".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            match &switch_block.body[5] {
+            match &switch_block.body[5].0 {
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[6] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[6].0 {
                 assert_eq!(expression, &Expression::Identifier("bbb".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
@@ -732,27 +732,27 @@ case 3:
 
         // 2つ目のswitch文のチェック
         if let Statement::Switch { condition, switch_block } = stmt2 {
-            assert_eq!(condition.to_string(), "x");
+            assert_eq!(condition.0.to_string(), "x");
             // 各ラベルのチェック
             assert_eq!(switch_block.label_entries.len(), 2);
-            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case(Expression::Int(1)));
-            assert_eq!(switch_block.label_entries[0].labels[1], SwitchLabel::Case(Expression::Int(2)));
+            assert_eq!(switch_block.label_entries[0].labels[0], SwitchLabel::Case((Expression::Int(1), Loc { row: 17, col: 6 })));
+            assert_eq!(switch_block.label_entries[0].labels[1], SwitchLabel::Case((Expression::Int(2), Loc { row: 18, col: 6 })));
             assert_eq!(switch_block.label_entries[0].start_index, 0);
-            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case(Expression::Int(3)));
+            assert_eq!(switch_block.label_entries[1].labels[0], SwitchLabel::Case((Expression::Int(3), Loc { row: 20, col: 6 })));
             assert_eq!(switch_block.label_entries[1].start_index, 1);
 
             assert_eq!(switch_block.body.len(), 3);
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[0] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[0].0 {
                 assert_eq!(expression, &Expression::Identifier("bbb".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            if let Statement::ExpressionStatement(expression) = &switch_block.body[1] {
+            if let Statement::ExpressionStatement((expression, _)) = &switch_block.body[1].0 {
                 assert_eq!(expression, &Expression::Identifier("ccc".to_string()));
             } else {
                 panic!("Expected ExpressionStatement with Identifier");
             }
-            match &switch_block.body[2] {
+            match &switch_block.body[2].0 {
                 Statement::Break => {}
                 _ => panic!("Expected Statement with Break"),
             }
@@ -787,7 +787,7 @@ while (x < y) {
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -797,8 +797,8 @@ while (x < y) {
             match stmt {
                 Statement::While { condition, body} => {
                     let (expected_condition, expected_body) = expected[row_num];
-                    assert_eq!(condition.to_string(), expected_condition.to_string());
-                    assert_eq!(body.to_string(), expected_body.to_string());
+                    assert_eq!(condition.0.to_string(), expected_condition.to_string());
+                    assert_eq!(body.0.to_string(), expected_body.to_string());
                 }
                 _ => panic!("Statement is not While"),
             }
@@ -822,7 +822,7 @@ do x + 2; while (x < y);
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -832,8 +832,8 @@ do x + 2; while (x < y);
             match stmt {
                 Statement::DoWhile { body, condition } => {
                     let (expected_body, expected_condition) = expected[row_num];
-                    assert_eq!(body.to_string(), expected_body.to_string());
-                    assert_eq!(condition.to_string(), expected_condition.to_string());
+                    assert_eq!(body.0.to_string(), expected_body.to_string());
+                    assert_eq!(condition.0.to_string(), expected_condition.to_string());
                 }
                 _ => panic!("Statement is not DoWhile"),
             }
@@ -859,7 +859,7 @@ for (;;) ++a;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -869,10 +869,10 @@ for (;;) ++a;
             match stmt {
                 Statement::For { init, condition, post, body} => {
                     let (expected_init, expected_condition, expected_post, expected_body) = expected[row_num];
-                    assert_eq!(init.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_init.to_string());
-                    assert_eq!(condition.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_condition.to_string());
-                    assert_eq!(post.as_ref().map(|x| x.to_string()).unwrap_or_default(), expected_post.to_string());
-                    assert_eq!(body.to_string(), expected_body.to_string());
+                    assert_eq!(init.as_ref().map(|x| x.0.to_string()).unwrap_or("".to_string()), expected_init.to_string());
+                    assert_eq!(condition.as_ref().map(|x| x.0.to_string()).unwrap_or_default(), expected_condition.to_string());
+                    assert_eq!(post.as_ref().map(|x| x.0.to_string()).unwrap_or_default(), expected_post.to_string());
+                    assert_eq!(body.0.to_string(), expected_body.to_string());
                 }
                 _ => panic!("Statement is not For"),
             }
@@ -893,6 +893,10 @@ int d[][4] = { {1, 2, 3, 4}, {1, 2, 3, 4} };
 int e[] = {};
 int f[] = {1, 2, };
 char *s = \"Hello!\\n\";
+struct {
+    char *word;
+    int count;
+} keytab[3];
 struct key {
     char *word;
     int count;
@@ -910,7 +914,8 @@ struct key keytab[3];
             ("int[]", "e", Some("{}")),
             ("int[]", "f", Some("{1, 2}")),
             ("char*", "s", Some("Hello!\\n")),
-            ("struct key {\n    char* word;\n    int count;\n}[3]", "keytab", None),
+            ("struct {\n    char* word;\n    int count;\n}[3]", "keytab", None),
+            ("struct key[3]", "keytab", None),
             ("struct key[3]", "keytab", None),
         ];
 
@@ -918,7 +923,7 @@ struct key keytab[3];
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -931,7 +936,7 @@ struct key keytab[3];
                     let (expected_type, expected_name, expected_value) = &expected[row_num];
                     assert_eq!(type_dec.type_name(), expected_type.to_string());
                     assert_eq!(declarator.name, *expected_name);
-                    assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), expected_value.map(|x|x.to_string()));
+                    assert_eq!(declarator.value.as_ref().map(|x| x.0.to_string()), expected_value.map(|x|x.to_string()));
                 }
                 _ => panic!("Statement is not VarDecl"),
             }
@@ -956,7 +961,7 @@ piyo(3+2, b);
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -964,10 +969,10 @@ piyo(3+2, b);
         assert_eq!(parse_results.len(), expected.len());
         for (i, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement(Expression::FunctionCallExpression { function_name, arguments }) => {
+                Statement::ExpressionStatement((Expression::FunctionCallExpression { function_name, arguments }, _)) => {
                     let (expected_function_name, expected_arguments)= &expected[i];
                     assert_eq!(function_name, expected_function_name);
-                    let xs: Vec<String> = arguments.iter().map(|x| x.to_string()).collect();
+                    let xs: Vec<String> = arguments.iter().map(|x| x.0.to_string()).collect();
                     assert_eq!(xs, *expected_arguments);
                 }
                 _ => panic!("Statement is not Expression::FunctionCallExpression"),
@@ -991,7 +996,7 @@ a--;
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<Statement> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_statement().unwrap());
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -999,10 +1004,10 @@ a--;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement(Expression::PostfixExpression { operator, left }) => {
+                Statement::ExpressionStatement((Expression::PostfixExpression { operator, left }, _)) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
-                    assert_eq!(left.as_ref(), expected_right);
+                    assert_eq!(left.0, *expected_right);
                 }
                 _ => panic!("Statement is not PostfixExpression"),
             }
