@@ -1,15 +1,13 @@
-use crate::parser::ast::Function;
-
 use super::{Parser, Result, TokenType};
-use super::ast::{ExternalItem, TypeRef, Parameter};
+use super::ast::{ExternalItem, ExternalItemNode, TypeRef, Function, Parameter};
 
 impl Parser {
-    pub(super) fn parse_external_item(&mut self) -> Result<ExternalItem> {
+    pub(super) fn parse_external_item(&mut self) -> Result<ExternalItemNode> {
         let mut struct_type_dec: Option<TypeRef> = None;
         if self.cur_token.token_type == TokenType::Struct {
             let struct_type = self.parse_struct_type()?;
             if self.cur_token.token_type == TokenType::Semicolon {
-                return Ok(ExternalItem::Struct(struct_type));
+                return Ok((ExternalItem::Struct(struct_type), self.cur_token.loc()));
             }
             struct_type_dec = if self.cur_token.token_type == TokenType::Asterisk {
                 self.next_token();
@@ -48,15 +46,15 @@ impl Parser {
         }
     }
 
-    fn parse_external_vardecl(&mut self, type_dec: TypeRef) -> Result<ExternalItem> {
+    fn parse_external_vardecl(&mut self, type_dec: TypeRef) -> Result<ExternalItemNode> {
         let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(self.error(format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)));
         }
-        return Ok(ExternalItem::VarDecl(declarators));
+        return Ok((ExternalItem::VarDecl(declarators), self.cur_token.loc()));
     }
 
-    fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItem> {
+    fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItemNode> {
         if self.cur_token.token_type != TokenType::Ident {
             return Err(self.error(format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)));
         }
@@ -70,9 +68,9 @@ impl Parser {
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
-            Ok(ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }))
+            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }), self.cur_token.loc()))
         } else {
-            Ok(ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }))
+            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }), self.cur_token.loc()))
         };
     }
 
@@ -126,7 +124,7 @@ char c2 = '\n';
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<ExternalItem> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_external_item().unwrap());
+            parse_results.push(p.parse_external_item().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -139,7 +137,7 @@ char c2 = '\n';
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
-                        assert_eq!(declarator.value.as_ref().map(|x| x.to_string()), *expected_value);
+                        assert_eq!(declarator.value.as_ref().map(|x| x.0.to_string()), *expected_value);
                     }
                 }
                 _ => panic!("ExternalItem is not VarDecl"),
@@ -252,7 +250,7 @@ struct point* movepoint(struct point* p, int x, int y);
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<ExternalItem> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_external_item().unwrap());
+            parse_results.push(p.parse_external_item().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
@@ -265,7 +263,7 @@ struct point* movepoint(struct point* p, int x, int y);
                     assert_eq!(return_type_dec.type_name(), expected_return_type.to_string());
                     assert_eq!(*name, *expected_name);
                     assert_eq!(parameters, expected_parameters);
-                    assert_eq!(body.as_ref().map(|x| x.to_string()), *expected_body);
+                    assert_eq!(body.as_ref().map(|x| x.0.to_string()), *expected_body);
                 }
                 _ => panic!("ExternalItem is not FunctionDecl"),
             }
@@ -294,7 +292,7 @@ struct key {
         let mut p = Parser::new(Lexer::new(input));
         let mut parse_results: Vec<ExternalItem> = vec![];
         for _ in 0..expected.len() {
-            parse_results.push(p.parse_external_item().unwrap());
+            parse_results.push(p.parse_external_item().map(|(item, _)| item).unwrap());
             p.next_token();
         }
 
