@@ -1,15 +1,28 @@
 use std::{collections::{HashMap, HashSet}, fmt};
 
-use crate::parser::ast::{Declarator, Expression, ExpressionNode, ExternalItem, Function, Parameter, Program, Statement, StatementNode, TypeRef};
+use crate::parser::ast::{Declarator, Expression, ExpressionNode, ExternalItem, Function, Loc, Parameter, Program, Statement, StatementNode, TypeRef};
 
 #[derive(Debug)]
 pub struct Error {
     errors: Vec<String>,
 }
 
+impl Error {
+    fn new(loc: &Loc, msg: String) -> Error {
+        return Error { errors: vec![build_error_msg(loc, msg)] };
+    }
+}
+
+fn build_error_msg(loc: &Loc, msg: String) -> String {
+    format!("error:{}:{}: {}", loc.row, loc.col, msg)
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for error in &self.errors {
+            writeln!(f, "{}", error)?;
+        }
+        Ok(())
     }
 }
 
@@ -105,7 +118,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
     let mut env = Env { type_table: &mut type_table, functions: &mut functions, scope: global_scope };
 
     for item_node in &ast.external_item_nodes {
-        let (item, _) = item_node;
+        let (item, external_item_loc) = item_node;
         match item {
             ExternalItem::Struct(type_ref) => {
                 // TODO: check struct's fields
@@ -170,7 +183,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
             match check_expression(env, condition) {
                 Ok(condition_type) => {
                     if condition_type.type_name() != "int" {
-                        results.push(Error { errors: vec![format!("type error. condition type is {}", condition_type.type_name())] });
+                        results.push(Error::new(&condition.1, format!("type error. condition type is {}", condition_type.type_name())));
                     }
                     results.extend(check_statement(env, &consequence));
                     if let Some(alt_stmt) = alternative {
@@ -194,7 +207,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
 }
 
 fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
-    let (exp, _) = exp_node;
+    let (exp, exp_loc) = exp_node;
     match exp {
         Expression::Int(_) => {
             Ok(TypeRef::Named("int".to_string()))
@@ -209,7 +222,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                     Ok(type_ref)
                 },
                 None => {
-                    Err(Error { errors: vec![format!("variable `{}` is not defined", name)] })
+                    Err(Error::new(exp_loc, format!("variable `{}` is not defined", name)))
                 }
             }
         },
@@ -226,12 +239,13 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                     let left_type = check_expression(env, left)?;
                     let right_type = check_expression(env, right)?;
                     if left_type != right_type {
-                        Err(Error {
-                            errors: vec![format!(
+                        Err(Error::new(
+                            &left.as_ref().1,
+                            format!(
                                 "type mismatched for operator `{}`. left type is {}, right type is {}",
                                 operator, left_type.type_name(), right_type.type_name()
-                            )]
-                        })
+                            ),
+                        ))
                     } else {
                         Ok(left_type)
                     }
@@ -242,11 +256,11 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
         Expression::FunctionCallExpression { function_name, arguments } => {
             match env.find_function(function_name) {
                 None => {
-                    Err(Error { errors: vec![format!("function `{}` is not defined", function_name)] })
+                    Err(Error::new(exp_loc, format!("function `{}` is not defined", function_name)))
                 },
                 Some(f) => {
                     if f.parameters.len() != arguments.len() {
-                        return Err(Error { errors: vec![format!("wrong number of arguments, `{}`.", function_name)] })
+                        return Err(Error::new(exp_loc, format!("wrong number of arguments, `{}`.", function_name)))
                     }
                     let errors: Vec<String> = f.parameters.iter()
                         .zip(arguments.iter())
@@ -255,9 +269,10 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                             match check_expression(env, arg) {
                                 Ok(arg_type) => {
                                     if arg_type != param.type_dec {
-                                        vec![format!(
-                                            "mismatched type for argument {} in function call, `{}`.",
-                                            i + 1, function_name,
+                                        let (_, loc) = arg;
+                                        vec![build_error_msg(
+                                            loc,
+                                            format!( "mismatched type for argument {} in function call, `{}`.", i + 1, function_name)
                                         )]
                                     } else {
                                         vec![]
@@ -314,9 +329,10 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator) -> Result<
     if let Some(exp) = &decl.value {
         let var_type = check_expression(env, exp)?;
         if type_ref.type_name() != var_type.type_name() {
-            return Err(Error {
-                errors: vec![format!("type error. initialize variable type is {}, value type is {}", type_ref.type_name(), var_type.type_name())]
-            });
+            return Err(Error::new(
+                &exp.1,
+                format!("type error. initialize variable type is {}, value type is {}", type_ref.type_name(), var_type.type_name())
+            ));
         }
     }
     Ok(type_ref.clone())
@@ -326,17 +342,20 @@ fn check_basic_calc_operator(env: &Env, left: &ExpressionNode, right: &Expressio
     let mut errors: Vec<String> = vec![];
     let left_type = check_expression(env, left)?;
     if left_type.type_name() != "int" {
-        errors.push(format!("type error. left should be `int`, but is {}", left_type.type_name()));
+        let (_, loc) = left;
+        errors.push(build_error_msg(loc, format!("type error. left should be `int`, but is {}", left_type.type_name())));
     }
     let right_type = check_expression(env,right)?;
     if right_type.type_name() != "int" {
-        errors.push(format!("type error. right should be `int`, but is {}", right_type.type_name()));
+        let (_, loc) = right;
+        errors.push(build_error_msg(loc,format!("type error. right should be `int`, but is {}", right_type.type_name())));
     }
     if !errors.is_empty() {
         return Err(Error { errors });
     }
     if left_type.type_name() != right_type.type_name() {
-        errors.push(format!( "type error. left type is {}, right type is {}", left_type.type_name(), right_type.type_name(),));
+        let (_, loc) = left;
+        errors.push(build_error_msg(loc, format!("type error. left type is {}, right type is {}", left_type.type_name(), right_type.type_name())));
         return Err(Error { errors });
     }
     Ok(left_type)
@@ -384,11 +403,11 @@ int inc(int a) {
         // then
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 5);
-            assert_eq!(true, errors[0].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[0]);
-            assert_eq!(true, errors[1].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
-            assert_eq!(true, errors[2].starts_with("type error. initialize variable type is"), "actual message: `{}`", errors[2]);
-            assert_eq!(true, errors[3].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[3]);
-            assert_eq!(true, errors[4].starts_with("variable `c` is not defined"), "actual message: `{}`", errors[4]);
+            assert_eq!(true, errors[0].starts_with("error:2:9: type error. initialize variable type is"), "actual message: `{}`", errors[0]);
+            assert_eq!(true, errors[1].starts_with("error:3:13: type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[2].starts_with("error:4:12: type error. initialize variable type is"), "actual message: `{}`", errors[2]);
+            assert_eq!(true, errors[3].starts_with("error:5:17: type error. right should be `int`, but is"), "actual message: `{}`", errors[3]);
+            assert_eq!(true, errors[4].starts_with("error:9:16: variable `c` is not defined"), "actual message: `{}`", errors[4]);
         } else {
             assert!(false);
         }
@@ -415,8 +434,8 @@ int main() {
         // then
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 2);
-            assert_eq!(true, errors[0].starts_with("type error. condition type is"), "actual message: `{}`", errors[0]);
-            assert_eq!(true, errors[1].starts_with("type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
+            assert_eq!(true, errors[0].starts_with("error:3:9: type error. condition type is"), "actual message: `{}`", errors[0]);
+            assert_eq!(true, errors[1].starts_with("error:4:21: type error. right should be `int`, but is"), "actual message: `{}`", errors[1]);
         } else {
             assert!(false);
         }
@@ -452,12 +471,12 @@ int main() {
         // then
         if let Some(Error{ errors }) = result.err() {
             assert_eq!(errors.len(), 6);
-            assert_eq!("function `random` is not defined", errors[0]);
-            assert_eq!("type error. initialize variable type is char, value type is int", errors[1]);
-            assert_eq!("type mismatched for operator `=`. left type is char, right type is int", errors[2]);
-            assert_eq!("wrong number of arguments, `inc`.", errors[3]);
-            assert_eq!("mismatched type for argument 1 in function call, `inc`.", errors[4]);
-            assert_eq!("wrong number of arguments, `inc`.", errors[5]);
+            assert_eq!("error:7:20: function `random` is not defined", errors[0]);
+            assert_eq!("error:9:18: type error. initialize variable type is char, value type is int", errors[1]);
+            assert_eq!("error:11:5: type mismatched for operator `=`. left type is char, right type is int", errors[2]);
+            assert_eq!("error:13:17: wrong number of arguments, `inc`.", errors[3]);
+            assert_eq!("error:14:18: mismatched type for argument 1 in function call, `inc`.", errors[4]);
+            assert_eq!("error:15:17: wrong number of arguments, `inc`.", errors[5]);
         } else {
             assert!(false);
         }
