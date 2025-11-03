@@ -39,11 +39,22 @@ impl TypeTable {
     fn put(&mut self, type_ref: TypeRef) {
         self.entities.insert(type_ref);
     }
-    fn find(&self, name: &str) -> Option<TypeRef> {
-        self.entities.iter().find(|elm| { elm.type_name() == name }).cloned()
+    fn find(&self, type_ref: &TypeRef) -> Option<TypeRef> {
+        match type_ref {
+            TypeRef::Named(_) | TypeRef::Struct { .. } => {
+                self.entities.iter().find(|elm| { elm.type_name() == type_ref.type_name() }).cloned()
+            },
+            TypeRef::Pointer(inner_type_ref) => {
+                self.find(inner_type_ref).map(|ty| TypeRef::Pointer(Box::new(ty)))
+            }
+            // TODO:
+            TypeRef::Array { type_dec, .. } => {
+                self.find(type_dec)
+            },
+        }
     }
     fn contains(&self, type_ref: &TypeRef) -> bool {
-        self.entities.contains(type_ref)
+        self.find(type_ref).is_some()
     }
 }
 
@@ -91,24 +102,12 @@ impl <'a> Env<'a> {
         self.type_table.put(type_ref);
     }
 
-    fn find_type(&self, name: &str) -> Option<TypeRef> {
-        self.type_table.find(name)
+    fn find_type(&self, type_ref: &TypeRef) -> Option<TypeRef> {
+        self.type_table.find(type_ref)
     }
 
     fn is_defined_type(&self, type_ref: &TypeRef) -> bool {
-        match type_ref {
-            TypeRef::Named(_) | TypeRef::Struct { .. } => {
-                self.type_table.contains(type_ref)
-            },
-            // TODO:
-            TypeRef::Pointer(type_ref) => {
-                self.type_table.contains(type_ref)
-            }
-            // TODO:
-            TypeRef::Array { type_dec, .. } => {
-                self.type_table.contains(type_dec)
-            },
-        }
+        self.type_table.contains(type_ref)
     }
 
     fn put_function(&mut self, function: Function) {
@@ -146,8 +145,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
                         if env.is_defined_type(&member.type_dec) {
                             None
                         } else {
-                            Some(Error::new(external_item_loc, format!("struct member's type is not defined: {:?}", member.type_dec.type_name())))
-                            // Some(Error { errors: vec![format!("struct member's type is not defined: {:?}", member.type_dec.type_name())] })
+                            Some(Error::new(external_item_loc, format!("struct member's type is not defined: {}", member.type_dec.type_name())))
                         }
                     }).collect();
                     if es.len() > 0 {
@@ -256,14 +254,30 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
         Expression::Identifier(name) => {
             match env.find_vardecl(name) {
                 Some(type_ref) => {
-                    Ok(type_ref)
+                    env.find_type(&type_ref).ok_or(Error::new(exp_loc, format!("variable type `{}` is not defined", type_ref.type_name())))
                 },
                 None => {
                     Err(Error::new(exp_loc, format!("variable `{}` is not defined", name)))
                 }
             }
         },
-        Expression::PrefixExpression { operator, right } => todo!(),
+        Expression::PrefixExpression { operator, right } => {
+            match operator.as_str() {
+                "!" | "-" | "++" | "--" => todo!(),
+                "*" => {
+                    let right_type = check_expression(env, right)?;
+                    let TypeRef::Pointer(ty) = right_type else {
+                        return Err(Error::new(exp_loc, format!("cannot dereference non-pointer type `{}`", right_type.type_name())));
+                    };
+                    Ok(*ty)
+                },
+                "&" => {
+                    let right_type = check_expression(env, right)?;
+                    Ok(TypeRef::Pointer(Box::new(right_type)))
+                },
+                _ => panic!("prefix is not supported. prefix is {}, right is {:?}", operator, right),
+            }
+        },
         Expression::InfixExpression { operator, left, right } => {
             match operator.as_str() {
                 "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
@@ -274,7 +288,16 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                     let left_type = check_expression(env, left)?;
                     check_struct(env, &left_type, &left.as_ref().1, right)
                 },
-                "->" => todo!(),
+                "->" => {
+                    let left_type = check_expression(env, left)?;
+                    let TypeRef::Pointer(ty) = left_type else {
+                        return Err(Error::new(
+                            &left.as_ref().1,
+                            format!( "left operand is not pointer. left is `{}`.", left_type.type_name()),
+                        ));
+                    };
+                    check_struct(env, ty.as_ref(), &left.as_ref().1, right)
+                },
                 _ => {
                     let left_type = check_expression(env, left)?;
                     let right_type = check_expression(env, right)?;
@@ -301,12 +324,13 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 return Err(Error::new(exp_loc, format!("wrong number of arguments, `{}`.", function_name)))
             }
             let errors: Vec<String> = f.parameters.iter()
+                .map(|p| env.find_type(&p.type_dec).unwrap_or_else(|| panic!("parameter type is not defined: {:?}", p.type_dec)))
                 .zip(arguments.iter())
                 .enumerate()
                 .flat_map(|(i, (param, arg))| {
                     match check_expression(env, arg) {
                         Ok(arg_type) => {
-                            if arg_type != param.type_dec {
+                            if arg_type != param {
                                 let (_, loc) = arg;
                                 vec![build_error_msg(
                                     loc,
@@ -554,11 +578,29 @@ int main() {
         let input = r#"
 struct person {
     int age;
+    char* name;
 };
+
+struct wrapper {
+    struct person p;
+};
+
+struct wrapper* newWrapper(struct person p) {
+    struct wrapper w;
+    w.p = p;
+    return &w;
+}
 
 int main() {
     struct person p;
     p.age = 20;
+
+    (&p)->name = "Taro";
+
+    char* s = "Jiro";
+    (*(&p)).name = s;
+
+    struct wrapper* w = newWrapper(p);
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
@@ -572,6 +614,57 @@ int main() {
             assert!(false);
         } else {
             assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_check_invalid_struct() {
+        // given
+        let input = r#"
+struct person {
+    int age;
+    char* name;
+};
+
+int main() {
+    struct person p;
+    p.age = "foo";
+    p.agee = 10;
+
+    (&p)->name = 10;
+    (&p)->namee = "Taro";
+    p->name = "Taro";
+
+    char* s = "Jiro";
+    (*(&p)).name = 10;
+    (*(&p)).namee = s;
+    (&p).name = s;
+
+    pp.age = 10;
+    p.1 = 10;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert_eq!(errors.len(), 10);
+            assert_eq!("error:9:6: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
+            assert_eq!("error:10:7: field `agee` is not defined. defined members: {age, name}", errors[1]);
+            assert_eq!("error:12:9: type mismatched for operator `=`. left type is char*, right type is int", errors[2]);
+            assert_eq!("error:13:11: field `namee` is not defined. defined members: {age, name}", errors[3]);
+            assert_eq!("error:14:5: left operand is not pointer. left is `struct person`.", errors[4]);
+            assert_eq!("error:17:12: type mismatched for operator `=`. left type is char*, right type is int", errors[5]);
+            assert_eq!("error:18:13: field `namee` is not defined. defined members: {age, name}", errors[6]);
+            assert_eq!("error:19:6: left type is not struct. left type is Pointer(Struct { tag_name: Some(\"person\"), members: [StructDecl { type_dec: Named(\"int\"), name: \"age\" }, StructDecl { type_dec: Pointer(Named(\"char\")), name: \"name\" }] })", errors[7]);
+            assert_eq!("error:21:5: variable `pp` is not defined", errors[8]);
+            assert_eq!("error:22:7: right is not Identifier. right: Int(1)", errors[9]);
+        } else {
+            assert!(false);
         }
     }
 }
