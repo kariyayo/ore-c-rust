@@ -316,39 +316,35 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
         },
         Expression::PostfixExpression { operator, left } => todo!(),
         Expression::FunctionCallExpression { function_name, arguments } => {
-            match env.find_function(function_name) {
-                None => {
-                    Err(Error::new(exp_loc, format!("function `{}` is not defined", function_name)))
-                },
-                Some(f) => {
-                    if f.parameters.len() != arguments.len() {
-                        return Err(Error::new(exp_loc, format!("wrong number of arguments, `{}`.", function_name)))
-                    }
-                    let errors: Vec<String> = f.parameters.iter()
-                        .zip(arguments.iter())
-                        .enumerate()
-                        .flat_map(|(i, (param, arg))| {
-                            match check_expression(env, arg) {
-                                Ok(arg_type) => {
-                                    if arg_type != param.type_dec {
-                                        let (_, loc) = arg;
-                                        vec![build_error_msg(
-                                            loc,
-                                            format!( "mismatched type for argument {} in function call, `{}`.", i + 1, function_name)
-                                        )]
-                                    } else {
-                                        vec![]
-                                    }
-                                },
-                                Err(e) => e.errors,
+            let Some(f) = env.find_function(&function_name) else {
+                return Err(Error::new(exp_loc, format!("function `{}` is not defined", function_name)));
+            };
+            if f.parameters.len() != arguments.len() {
+                return Err(Error::new(exp_loc, format!("wrong number of arguments, `{}`.", function_name)))
+            }
+            let errors: Vec<String> = f.parameters.iter()
+                .zip(arguments.iter())
+                .enumerate()
+                .flat_map(|(i, (param, arg))| {
+                    match check_expression(env, arg) {
+                        Ok(arg_type) => {
+                            if arg_type != param.type_dec {
+                                let (_, loc) = arg;
+                                vec![build_error_msg(
+                                    loc,
+                                    format!( "mismatched type for argument {} in function call, `{}`.", i + 1, function_name)
+                                )]
+                            } else {
+                                vec![]
                             }
-                        }).collect();
-                    if errors.is_empty() {
-                        Ok(f.return_type_dec.clone())
-                    } else {
-                        Err(Error { errors })
+                        },
+                        Err(e) => e.errors,
                     }
-                },
+                }).collect();
+            if errors.is_empty() {
+                Ok(f.return_type_dec.clone())
+            } else {
+                Err(Error { errors })
             }
         },
         Expression::InitializerExpression { elements } => todo!(),
