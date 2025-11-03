@@ -47,14 +47,16 @@ impl Parser {
     }
 
     fn parse_external_vardecl(&mut self, type_dec: TypeRef) -> Result<ExternalItemNode> {
+        let loc = self.cur_token.loc();
         let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(self.error(format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)));
         }
-        return Ok((ExternalItem::VarDecl(declarators), self.cur_token.loc()));
+        return Ok((ExternalItem::VarDecl(declarators), loc));
     }
 
     fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItemNode> {
+        let loc = self.cur_token.loc();
         if self.cur_token.token_type != TokenType::Ident {
             return Err(self.error(format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)));
         }
@@ -68,9 +70,9 @@ impl Parser {
         self.next_token();
         return if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
-            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }), self.cur_token.loc()))
+            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }), loc))
         } else {
-            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }), self.cur_token.loc()))
+            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }), loc))
         };
     }
 
