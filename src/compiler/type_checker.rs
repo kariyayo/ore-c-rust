@@ -170,7 +170,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
             },
             ExternalItem::FunctionDecl(function) => {
                 let Function { return_type_dec, name, parameters, body } = function;
-                if let Err(e) = check_function_declaration(&mut env, return_type_dec, name, parameters, body) {
+                if let Err(e) = check_function_declaration(&mut env, return_type_dec, name, parameters, body, external_item_loc) {
                     results.push(e);
                 } else {
                     env.put_function(function.clone());
@@ -360,18 +360,19 @@ fn check_function_declaration(
     name: &str,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
+    loc: &Loc,
 ) -> Result<()> {
     let mut results: Vec<Error> = vec![];
 
     if !env.is_defined_type(return_type_dec) {
-        results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec.type_name())] });
+        results.push(Error::new(loc, format!("return type is not defined: {}", return_type_dec.type_name())));
     }
 
     let local_scope = LocalScope { parent: Some(&env.scope), entities: HashMap::new() };
     let mut new_env = Env { type_table: env.type_table, functions: env.functions, scope: local_scope };
     for p in parameters {
         if !new_env.is_defined_type(&p.type_dec) {
-            results.push(Error { errors: vec![format!("parameter type is not defined: {:?}", p.type_dec.type_name())] });
+            results.push(Error::new(loc, format!("parameter type is not defined: {}", p.type_dec.type_name())));
         }
         new_env.put_vardecl(&p.name, p.type_dec.clone());
     }
