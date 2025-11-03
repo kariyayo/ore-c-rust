@@ -271,32 +271,8 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 }
                 "[" => todo!(),
                 "." => {
-                    // ".", "->" の左側オペランドが、structの定義に含まれているかチェック
                     let left_type = check_expression(env, left)?;
-                    let struct_defined = env.find_type(&left_type.type_name());
-                    struct_defined
-                        .ok_or(Error::new(&left.as_ref().1, format!("struct `{}` is not defined", left_type.type_name())))
-                        .and_then(|def| {
-                            let TypeRef::Struct { tag_name: _, members: defined_members } = def else {
-                                return Err(Error::new(&left.as_ref().1, format!("type `{}` is not struct.", left_type.type_name())));
-                            };
-                            // ".", "->" の右側オペランドが、structのフィールド定義に含まれているかチェック
-                            let (Expression::Identifier(operand_member), _) = right.as_ref() else {
-                                return Err(Error::new(&right.as_ref().1, format!("right is not Identifier. right: {}", right.as_ref().0)));
-                            };
-                            if let Some(defined) = defined_members.iter().find(|m| m.name == operand_member.to_string()) {
-                                Ok(defined.type_dec.clone())
-                            } else {
-                                Err(Error::new(
-                                    &right.as_ref().1,
-                                    format!(
-                                        "field `{}` is not defined. defined: {}",
-                                        operand_member,
-                                        defined_members.into_iter().map(|m| m.name.to_string()).collect::<Vec<String>>().join(", ")
-                                    ),
-                                ))
-                            }
-                        })
+                    check_struct(env, &left_type, &left.as_ref().1, right)
                 },
                 "->" => todo!(),
                 _ => {
@@ -420,6 +396,35 @@ fn check_basic_calc_operator(env: &Env, left: &ExpressionNode, right: &Expressio
         return Err(Error { errors });
     }
     Ok(left_type)
+}
+
+fn check_struct(env: &Env, left_type: &TypeRef, left_loc: &Loc, right: &ExpressionNode) -> Result<TypeRef> {
+    // ".", "->" の左側オペランドが、structの定義に含まれているかチェック
+    let struct_defined = env.find_type(&left_type);
+    struct_defined
+        .ok_or(Error::new(left_loc, format!("struct `{}` is not defined", left_type.type_name())))
+        .and_then(|def| {
+            let TypeRef::Struct { tag_name: _, members: defined_members } = def else {
+                return Err(Error::new(left_loc, format!("left type is not struct. left type is {:?}", left_type)));
+            };
+            // ".", "->" の右側オペランドが、structのフィールド定義に含まれているかチェック
+            let (Expression::Identifier(operand_member), _) = right else {
+                return Err(Error::new(&right.1, format!("right is not Identifier. right: {:?}", right.0)));
+            };
+            if let Some(defined) = defined_members.iter().find(|m| m.name == operand_member.to_string()) {
+                env.find_type(&defined.type_dec)
+                    .ok_or(Error::new(&right.1, format!("field `{}` type is not defined", defined.type_dec.type_name())))
+            } else {
+                Err(Error::new(
+                    &right.1,
+                    format!(
+                        "field `{}` is not defined. defined members: {{{}}}",
+                        operand_member,
+                        defined_members.into_iter().map(|m| m.name.to_string()).collect::<Vec<String>>().join(", ")
+                    ),
+                ))
+            }
+        })
 }
 
 fn generate_c_types() -> HashSet<TypeRef> {
