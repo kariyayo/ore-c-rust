@@ -250,7 +250,9 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
         Expression::CharacterLiteral(_) => {
             Ok(TypeRef::Named("char".to_string()))
         },
-        Expression::StringLiteral(_) => todo!(),
+        Expression::StringLiteral(_) => {
+            Ok(TypeRef::Pointer(Box::new(TypeRef::Named("char".to_string()))))
+        },
         Expression::Identifier(name) => {
             match env.find_vardecl(name) {
                 Some(type_ref) => {
