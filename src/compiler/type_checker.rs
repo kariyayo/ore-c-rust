@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, fmt};
+use std::{collections::{HashMap, HashSet}, fmt, vec};
 
 use crate::parser::ast::{Declarator, Expression, ExpressionNode, ExternalItem, Function, Loc, Parameter, Program, Statement, StatementNode, TypeRef};
 
@@ -433,7 +433,35 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_l
         TypeRef::Pointer(innter_ty) => {
             Err(Error::new(loc, "invalid initializer for pointer type".to_string()))
         },
-        TypeRef::Array { type_dec, size } => todo!(),
+        TypeRef::Array { type_dec, size } => {
+            if let Some(l) = size {
+                if init_elms.len() > (*l).try_into().unwrap() {
+                    return Err(Error::new(loc, format!("too many initializers for array of size {}, but it length is {}", l, init_elms.len())));
+                }
+            };
+            let errors: Vec<String> = init_elms
+                .iter()
+                .flat_map(|init_elm| {
+                    match check_expression(env, init_elm) {
+                        Ok(init_elm_ty) => {
+                            if type_dec.as_ref() != &init_elm_ty {
+                                vec![build_error_msg(
+                                    &init_elm.1,
+                                    format!("type mismatched for initializer. left type is {}, right type is {}", type_dec.as_ref().type_name(), init_elm_ty.type_name()),
+                                )]
+                            } else {
+                                vec![]
+                            }
+                        },
+                        Err(e) => e.errors,
+                    }
+                }).collect();
+            if errors.is_empty() {
+                Ok(type_ref.clone())
+            } else {
+                Err(Error { errors })
+            }
+        },
         TypeRef::Struct { tag_name: _, members: defined_members } => {
             if init_elms.len() != defined_members.len() {
                 return Err(Error::new(&loc, format!("initializer length should be {}, but is {}", defined_members.len(), init_elms.len())));
@@ -441,19 +469,19 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_l
             let errors: Vec<String> = init_elms
                 .iter()
                 .zip(defined_members)
-                .filter_map(|(init_elm, decl)| {
+                .flat_map(|(init_elm, decl)| {
                     match check_expression(env, init_elm) {
                         Ok(init_elm_ty) => {
                             if decl.type_dec != init_elm_ty {
-                                Some(build_error_msg(
+                                vec![build_error_msg(
                                     &init_elm.1,
                                     format!("type mismatched for initializer. left type is {}, right type is {}", decl.type_dec.type_name(), init_elm_ty.type_name())
-                                ))
+                                )]
                             } else {
-                                None
+                                vec![]
                             }
                         },
-                        Err(e) => e.errors.first().cloned(),
+                        Err(e) => e.errors,
                     }
                 }).collect();
             if errors.is_empty() {
@@ -756,6 +784,9 @@ int main() {
 
     int* ys;
     ys[0] = 2;
+
+    int zs[3] = { 1, 2, 3 };
+    int zs2[] = { 1, 2, 3 };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
@@ -795,6 +826,8 @@ int main() {
     ys["a"] = 3;
     ys[&i] = 5;
     ys[ip] = 5;
+
+    int zs[4] = { 1, "bar", 3, aaa };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
@@ -805,16 +838,18 @@ int main() {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 9);
+            assert_eq!(errors.len(), 11);
             assert_eq!("error:4:7: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
-            assert_eq!("error:5:5: index should be int. but it is `char*`.", errors[1]);
+            assert_eq!("error:5:8: index should be int. but it is `char*`.", errors[1]);
             assert_eq!("error:8:5: index operand should be array. but it is `int`.", errors[2]);
-            assert_eq!("error:11:5: index should be int. but it is `int*`.", errors[3]);
-            assert_eq!("error:14:5: index should be int. but it is `int*`.", errors[4]);
+            assert_eq!("error:11:8: index should be int. but it is `int*`.", errors[3]);
+            assert_eq!("error:14:8: index should be int. but it is `int*`.", errors[4]);
             assert_eq!("error:17:7: type mismatched for operator `=`. left type is int, right type is char*", errors[5]);
-            assert_eq!("error:18:5: index should be int. but it is `char*`.", errors[6]);
-            assert_eq!("error:19:5: index should be int. but it is `int*`.", errors[7]);
-            assert_eq!("error:20:5: index should be int. but it is `int*`.", errors[8]);
+            assert_eq!("error:18:8: index should be int. but it is `char*`.", errors[6]);
+            assert_eq!("error:19:8: index should be int. but it is `int*`.", errors[7]);
+            assert_eq!("error:20:8: index should be int. but it is `int*`.", errors[8]);
+            assert_eq!("error:22:22: type mismatched for initializer. left type is int, right type is char*", errors[9]);
+            assert_eq!("error:22:32: variable `aaa` is not defined", errors[10]);
         } else {
             assert!(false);
         }
