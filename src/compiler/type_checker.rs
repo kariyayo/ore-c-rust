@@ -159,7 +159,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
             },
             ExternalItem::VarDecl(items) => {
                 for (type_ref, decl) in items {
-                    if let Err(e) = check_declarator(&mut env, type_ref, decl) {
+                    if let Err(e) = check_declarator(&mut env, type_ref, decl, external_item_loc) {
                         results.push(e);
                     } else {
                         env.put_vardecl(decl.name.as_str(), type_ref.clone());
@@ -184,7 +184,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
 
 fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
-    let (stmt, _) = stmt_node;
+    let (stmt, loc) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
             if let Some(exp) = expression {
@@ -197,7 +197,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         Statement::Continue => todo!(),
         Statement::VarDecl(items) => {
             for (type_ref, decl) in items {
-                if let Err(e) = check_declarator(env, type_ref, decl) {
+                if let Err(e) = check_declarator(env, type_ref, decl, loc) {
                     results.push(e);
                 } else {
                     env.put_vardecl(&decl.name, type_ref.clone());
@@ -386,17 +386,64 @@ fn check_function_declaration(
     Err(Error { errors: results.into_iter().flat_map(|e| e.errors).collect() })
 }
 
-fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator) -> Result<TypeRef> {
-    if let Some(exp) = &decl.value {
+fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_loc: &Loc) -> Result<TypeRef> {
+    let Some(exp) = &decl.value else {
+        return Ok(type_ref.clone());
+    };
+    let Expression::InitializerExpression { elements: init_elms } = &exp.0 else {
+        // 右辺が初期化子ではない場合のチェック
         let var_type = check_expression(env, exp)?;
         if type_ref.type_name() != var_type.type_name() {
             return Err(Error::new(
                 &exp.1,
-                format!("type error. initialize variable type is {}, value type is {}", type_ref.type_name(), var_type.type_name())
+                format!("type error. initialize variable type is {}, value type is {}", type_ref.type_name(), var_type.type_name()),
             ));
         }
+        return Ok(type_ref.clone());
+    };
+    // 左辺の型情報（type_ref）を使って、右辺の初期化子をチェックする
+    let loc = &exp.1;
+    match type_ref {
+        TypeRef::Named(_) => {
+            if let Some(ty) = env.find_type(type_ref) {
+                check_declarator(env, &ty, decl, external_loc)
+            } else {
+                Ok(type_ref.clone())
+            }
+        },
+        TypeRef::Pointer(innter_ty) => {
+            Err(Error::new(loc, "invalid initializer for pointer type".to_string()))
+        },
+        TypeRef::Array { type_dec, size } => todo!(),
+        TypeRef::Struct { tag_name: _, members: defined_members } => {
+            if init_elms.len() != defined_members.len() {
+                return Err(Error::new(&loc, format!("initializer length should be {}, but is {}", defined_members.len(), init_elms.len())));
+            }
+            let errors: Vec<String> = init_elms
+                .iter()
+                .zip(defined_members)
+                .filter_map(|(init_elm, decl)| {
+                    match check_expression(env, init_elm) {
+                        Ok(init_elm_ty) => {
+                            if decl.type_dec != init_elm_ty {
+                                Some(build_error_msg(
+                                    &init_elm.1,
+                                    format!("type mismatched for initializer. left type is {}, right type is {}", decl.type_dec.type_name(), init_elm_ty.type_name())
+                                ))
+                            } else {
+                                None
+                            }
+                        },
+                        Err(e) => e.errors.first().cloned(),
+                    }
+                }).collect();
+            if errors.is_empty() {
+                Ok(type_ref.clone())
+            } else {
+                Err(Error { errors })
+            }
+        },
     }
-    Ok(type_ref.clone())
 }
 
 fn check_basic_calc_operator(env: &Env, left: &ExpressionNode, right: &ExpressionNode) -> Result<TypeRef> {
@@ -601,6 +648,8 @@ int main() {
     (*(&p)).name = s;
 
     struct wrapper* w = newWrapper(p);
+
+    struct person p2 = { 30, "Dave" };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
@@ -611,7 +660,7 @@ int main() {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert!(false);
+            assert!(false, "errors: {:?}", errors);
         } else {
             assert!(true);
         }
@@ -642,6 +691,8 @@ int main() {
 
     pp.age = 10;
     p.1 = 10;
+
+    struct person p2 = { "Dave", 30 };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
@@ -652,7 +703,7 @@ int main() {
 
         // then
         if let Some(Error{ errors }) = result.err() {
-            assert_eq!(errors.len(), 10);
+            assert_eq!(errors.len(), 12);
             assert_eq!("error:9:6: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
             assert_eq!("error:10:7: field `agee` is not defined. defined members: {age, name}", errors[1]);
             assert_eq!("error:12:9: type mismatched for operator `=`. left type is char*, right type is int", errors[2]);
@@ -663,6 +714,8 @@ int main() {
             assert_eq!("error:19:6: left type is not struct. left type is Pointer(Struct { tag_name: Some(\"person\"), members: [StructDecl { type_dec: Named(\"int\"), name: \"age\" }, StructDecl { type_dec: Pointer(Named(\"char\")), name: \"name\" }] })", errors[7]);
             assert_eq!("error:21:5: variable `pp` is not defined", errors[8]);
             assert_eq!("error:22:7: right is not Identifier. right: Int(1)", errors[9]);
+            assert_eq!("error:24:26: type mismatched for initializer. left type is int, right type is char*", errors[10]);
+            assert_eq!("error:24:34: type mismatched for initializer. left type is char*, right type is int", errors[11]);
         } else {
             assert!(false);
         }
