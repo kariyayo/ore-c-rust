@@ -5,7 +5,7 @@ impl Parser {
 
     // 文をパースする
     fn parse_statement(&mut self) -> Result<StatementNode> {
-        let result = match self.cur_token.token_type {
+        match self.cur_token.token_type {
             TokenType::Return => {
                 self.parse_return_statement()
             }
@@ -39,8 +39,7 @@ impl Parser {
             _ => {
                 self.parse_expression_statement()
             }
-        };
-        return result
+        }
     }
 
     // return <expression>;
@@ -48,18 +47,18 @@ impl Parser {
         let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok((Statement::Return(None), loc));
+            Ok((Statement::Return(None), loc))
         } else {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
             let result = Statement::Return(Some(value));
             self.next_token();
-            return if self.cur_token.token_type == TokenType::Semicolon {
+            if self.cur_token.token_type == TokenType::Semicolon {
                 Ok((result, loc))
             } else {
                 let error_msg = format!("[parse_return_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type);
                 Err(self.error(error_msg))
-            };
-        };
+            }
+        }
     }
 
     // <type_ref> <ident> = <expression>;
@@ -106,13 +105,14 @@ impl Parser {
             }
             self.next_token();
         }
-        if self.cur_token.token_type == TokenType::Eof {
-            Ok((Statement::Block(statements), loc))
-        } else if self.cur_token.token_type == TokenType::Rbrace {
-            Ok((Statement::Block(statements), loc))
-        } else {
-            let error_msg = format!("[parse_block_statement] expected next token to be Rbrace, got {:?}", self.cur_token.token_type);
-            Err(self.error(error_msg))
+        match self.cur_token.token_type {
+            TokenType::Eof | TokenType::Rbrace => {
+                Ok((Statement::Block(statements), loc))
+            }
+            _ => {
+                let error_msg = format!("[parse_block_statement] expected next token to be Rbrace, got {:?}", self.cur_token.token_type);
+                Err(self.error(error_msg))
+            }
         }
     }
 
@@ -225,7 +225,7 @@ impl Parser {
                 break;
             }
         }
-        return Ok(SwitchBlock { label_entries: switch_label_entry, body, });
+        Ok(SwitchBlock { label_entries: switch_label_entry, body, })
     }
 
     // break;
@@ -233,9 +233,9 @@ impl Parser {
         let loc = self.cur_token.loc();
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
-            return Ok((Statement::Break, loc));
+            Ok((Statement::Break, loc))
         } else {
-            return Err(self.error(format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)));
+            Err(self.error(format!("[parse_break_statement] expected next token to be SEMICOLON, got {:?}", self.cur_token.token_type)))
         }
     }
 
@@ -370,7 +370,7 @@ impl Parser {
     fn parse_expression_statement(&mut self) -> Result<StatementNode> {
         let loc = self.cur_token.loc();
         let expression = self.parse_expression(ExpressionPrecedence::Lowest);
-        let result = expression.map(|exp| Statement::ExpressionStatement(exp))?;
+        let result = expression.map(Statement::ExpressionStatement)?;
         self.next_token();
         if self.cur_token.token_type == TokenType::Semicolon {
             Ok((result, loc))
@@ -527,7 +527,7 @@ foobar;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement((Expression::PrefixExpression { operator, right }, _)) => {
+                Statement::ExpressionStatement((Expression::Prefix { operator, right }, _)) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(right.as_ref().0, *expected_right);
@@ -587,7 +587,7 @@ a %= 3;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement((Expression::InfixExpression { operator, left, right }, _)) => {
+                Statement::ExpressionStatement((Expression::Infix { operator, left, right }, _)) => {
                     let (expected_operator, expected_left, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.0, *expected_left);
@@ -969,7 +969,7 @@ piyo(3+2, b);
         assert_eq!(parse_results.len(), expected.len());
         for (i, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement((Expression::FunctionCallExpression { function_name, arguments }, _)) => {
+                Statement::ExpressionStatement((Expression::FunctionCall { function_name, arguments }, _)) => {
                     let (expected_function_name, expected_arguments)= &expected[i];
                     assert_eq!(function_name, expected_function_name);
                     let xs: Vec<String> = arguments.iter().map(|x| x.0.to_string()).collect();
@@ -1004,7 +1004,7 @@ a--;
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, stmt) in parse_results.iter().enumerate() {
             match stmt {
-                Statement::ExpressionStatement((Expression::PostfixExpression { operator, left }, _)) => {
+                Statement::ExpressionStatement((Expression::Postfix { operator, left }, _)) => {
                     let (expected_operator, expected_right)= &expected[row_num];
                     assert_eq!(operator, expected_operator);
                     assert_eq!(left.0, *expected_right);

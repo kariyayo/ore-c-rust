@@ -15,7 +15,7 @@ impl TypeRef {
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
             TypeRef::Array { type_dec: type_ref, size } => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
             TypeRef::Struct { tag_name, members } => {
-                if members.len() == 0 {
+                if members.is_empty() {
                     format!("struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
                 } else if tag_name.is_some() {
                     format!("struct {}", tag_name.as_ref().unwrap())
@@ -38,7 +38,7 @@ pub struct StructDecl {
 
 impl StructDecl {
     pub fn new(p: (TypeRef, String)) -> StructDecl {
-        return StructDecl { type_dec: p.0, name: p.1 };
+        StructDecl { type_dec: p.0, name: p.1 }
     }
 }
 
@@ -64,7 +64,7 @@ pub struct Parameter {
 
 impl Parameter {
     pub fn new(p: (TypeRef, String)) -> Parameter {
-        return Parameter { type_dec: p.0, name: p.1 };
+        Parameter { type_dec: p.0, name: p.1 }
     }
 }
 
@@ -102,6 +102,7 @@ pub enum Statement {
     While { condition: ExpressionNode, body: Box<StatementNode> },
     DoWhile { body: Box<StatementNode>, condition: ExpressionNode },
     For { init: Option<ExpressionNode>, condition: Option<ExpressionNode>, post: Option<ExpressionNode>, body: Box<StatementNode> },
+    #[allow(clippy::enum_variant_names)]
     ExpressionStatement(ExpressionNode),
 }
 
@@ -164,12 +165,12 @@ pub enum Expression {
     CharacterLiteral(char),
     StringLiteral(String),
     Identifier(String),
-    PrefixExpression { operator: String, right: Box<ExpressionNode> },
-    InfixExpression { operator: String, left: Box<ExpressionNode>, right: Box<ExpressionNode> },
-    PostfixExpression { operator: String, left: Box<ExpressionNode> },
-    FunctionCallExpression { function_name: String, arguments: Vec<ExpressionNode> },
-    InitializerExpression { elements: Vec<ExpressionNode> },
-    IndexExpression { left: Box<ExpressionNode>, index: Box<ExpressionNode> },
+    Prefix { operator: String, right: Box<ExpressionNode> },
+    Infix { operator: String, left: Box<ExpressionNode>, right: Box<ExpressionNode> },
+    Postfix { operator: String, left: Box<ExpressionNode> },
+    FunctionCall { function_name: String, arguments: Vec<ExpressionNode> },
+    Initializer { elements: Vec<ExpressionNode> },
+    Index { left: Box<ExpressionNode>, index: Box<ExpressionNode> },
 }
 
 impl fmt::Display for Program {
@@ -180,10 +181,10 @@ impl fmt::Display for Program {
 
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        return match self {
+        match self {
             Statement::Return(value) => {
                 match value {
-                    Some((v, _)) => write!(f, "return {};", v.to_string()),
+                    Some((v, _)) => write!(f, "return {};", v),
                     None => write!(f, "return;"),
                 }
             },
@@ -194,7 +195,7 @@ impl fmt::Display for Statement {
                 for (type_ref, declarator) in declarators {
                     let mut s = format!("{} {}", type_ref.type_name(), declarator.name);
                     if let Some(value) = &declarator.value {
-                        s.push_str(&format!(" = {}", value.0.to_string()));
+                        s.push_str(&format!(" = {}", value.0));
                     }
                     parts.push(s);
                 }
@@ -203,28 +204,25 @@ impl fmt::Display for Statement {
             Statement::Block(statements) => {
                 let mut result = "{\n".to_string();
                 for (stmt, _) in statements {
-                    result.push_str(&format!("    {}\n", stmt.to_string()));
+                    result.push_str(&format!("    {}\n", stmt));
                 }
-                result.push_str("}");
+                result.push('}');
                 write!(f, "{}", result)
             },
             Statement::If { condition, consequence, alternative } => {
-                let mut result = format!("if ({}) {}", condition.0.to_string(), consequence.0.to_string());
-                match alternative {
-                    Some(alt) => {
-                        result.push_str(&format!(" else {}", alt.0.to_string()));
-                    },
-                    None => {},
+                let mut result = format!("if ({}) {}", condition.0, consequence.0);
+                if let Some(alt) = alternative {
+                    result.push_str(&format!(" else {}", alt.0));
                 }
                 write!(f, "{}", result)
             },
             Statement::Switch { condition, switch_block: switch_body } => {
-                let mut result = format!("switch ({}) {{\n", condition.0.to_string());
+                let mut result = format!("switch ({}) {{\n", condition.0);
                 for label_entry in &switch_body.label_entries {
                     for label in &label_entry.labels {
                         match label {
                             SwitchLabel::Case(expr) => {
-                                result.push_str(&format!("    case {}:\n", expr.0.to_string()));
+                                result.push_str(&format!("    case {}:\n", expr.0));
                             },
                             SwitchLabel::Default => {
                                 result.push_str("    default:\n");
@@ -232,17 +230,17 @@ impl fmt::Display for Statement {
                         }
                     }
                     for stmt in &switch_body.body[label_entry.start_index as usize..] {
-                        result.push_str(&format!("        {}\n", stmt.0.to_string()));
+                        result.push_str(&format!("        {}\n", stmt.0));
                     }
                 }
-                result.push_str("}");
+                result.push('}');
                 write!(f, "{}", result)
             },
             Statement::While { condition, body } => {
-                write!(f, "while ({}) {}", condition.0.to_string(), body.0.to_string())
+                write!(f, "while ({}) {}", condition.0, body.0)
             },
             Statement::DoWhile { body, condition } => {
-                write!(f, "do {} while ({});", body.0.to_string(), condition.0.to_string())
+                write!(f, "do {} while ({});", body.0, condition.0)
             },
             Statement::For { init, condition, post, body } => {
                 let init_str = match init {
@@ -257,41 +255,41 @@ impl fmt::Display for Statement {
                     Some(p) => p.0.to_string(),
                     None => "".to_string(),
                 };
-                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.0.to_string())
+                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.0)
             },
             Statement::ExpressionStatement(expression) => {
-                write!(f, "{};", expression.0.to_string())
+                write!(f, "{};", expression.0)
             },
-        };
+        }
     }
 }
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        return match self {
+        match self {
             Expression::Int(value) => write!(f, "{}",value),
             Expression::CharacterLiteral(value) => write!(f, "{}", value),
             Expression::StringLiteral(value) => write!(f, "{}", value),
             Expression::Identifier(value) => write!(f, "{}", value),
-            Expression::PrefixExpression { operator, right } => {
-                write!(f, "({}{})", operator, right.0.to_string())
+            Expression::Prefix { operator, right } => {
+                write!(f, "({}{})", operator, right.0)
             },
-            Expression::InfixExpression { operator, left, right } => {
-                write!(f, "({} {} {})", left.0.to_string(), operator, right.0.to_string())
+            Expression::Infix { operator, left, right } => {
+                write!(f, "({} {} {})", left.0, operator, right.0)
             },
-            Expression::PostfixExpression { operator, left } => {
-                write!(f, "({}{})", left.0.to_string(), operator)
+            Expression::Postfix { operator, left } => {
+                write!(f, "({}{})", left.0, operator)
             },
-            Expression::FunctionCallExpression { function_name, arguments } => {
+            Expression::FunctionCall { function_name, arguments } => {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{}({})", function_name, args.join(", "))
             },
-            Expression::InitializerExpression { elements } => {
+            Expression::Initializer { elements } => {
                 let args: Vec<String> = elements.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{{{}}}", args.join(", "))
             },
-            Expression::IndexExpression { left, index } => {
-                write!(f, "({}[{}])", left.0.to_string(), index.0.to_string())
+            Expression::Index { left, index } => {
+                write!(f, "({}[{}])", left.0, index.0)
             },
         }
     }

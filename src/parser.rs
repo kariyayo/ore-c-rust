@@ -36,7 +36,7 @@ pub struct Parser {
 impl Parser {
     pub(crate) fn new(l: Lexer) -> Parser {
         let mut p = Parser {
-            l: l,
+            l,
             cur_token: Token::new(),
             peek_token: Token::new(),
             errors: vec![],
@@ -44,7 +44,7 @@ impl Parser {
 
         p.next_token();
         p.next_token();
-        return p;
+        p
     }
 
     pub fn parse_program(&mut self) -> ast::Program {
@@ -64,14 +64,14 @@ impl Parser {
             }
             self.next_token();
         }
-        if self.errors.len() > 0 {
+        if !self.errors.is_empty() {
             panic!("parse error: \n{}", self.errors.join("\n"));
         }
-        return program
+        program
     }
 
     fn error(&self, msg: String) -> Error {
-        return Error { errors: vec![format!("error:{}:{}: {}", self.cur_token.row, self.cur_token.col, msg)] };
+        Error { errors: vec![format!("error:{}:{}: {}", self.cur_token.row, self.cur_token.col, msg)] }
     }
 
     fn next_token(&mut self) {
@@ -102,7 +102,7 @@ impl Parser {
             self.next_token();
         }
 
-        return Ok(ast::TypeRef::Struct { tag_name, members });
+        Ok(ast::TypeRef::Struct { tag_name, members })
     }
 
     fn parse_struct_decls(&mut self) -> Result<Vec<ast::StructDecl>> {
@@ -122,7 +122,7 @@ impl Parser {
         if self.cur_token.token_type != TokenType::Rbrace {
             return Err(self.error(format!("[parse_struct_decls] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)));
         }
-        return Ok(decls);
+        Ok(decls)
     }
 
     fn parse_type_decls<F, T>(&mut self, separator: TokenType, end_token: TokenType, f: F) -> Result<Vec<T>>
@@ -174,7 +174,7 @@ impl Parser {
             }
             self.next_token(); // read separator
         }
-        return Ok(result);
+        Ok(result)
     }
 
     fn parse_declarators(&mut self, base_type_dec: &TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
@@ -243,6 +243,6 @@ impl Parser {
             }
             self.next_token(); // `,` を読み飛ばす
         }
-        return Ok(result);
+        Ok(result)
     }
 }

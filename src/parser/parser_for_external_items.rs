@@ -34,14 +34,14 @@ impl Parser {
 
                 if self.peek_token.token_type == TokenType::Lparem {
                     // 関数
-                    return self.parse_external_function(type_dec);
+                    self.parse_external_function(type_dec)
                 } else {
                     // 変数
-                    return self.parse_external_vardecl(type_dec);
+                    self.parse_external_vardecl(type_dec)
                 }
             }
             _ => {
-                return Err(self.error(format!("[parse_external_item] expected external item token, got {:?}", self.cur_token.token_type)));
+                Err(self.error(format!("[parse_external_item] expected external item token, got {:?}", self.cur_token.token_type)))
             }
         }
     }
@@ -52,7 +52,7 @@ impl Parser {
         if self.cur_token.token_type != TokenType::Semicolon {
             return Err(self.error(format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)));
         }
-        return Ok((ExternalItem::VarDecl(declarators), loc));
+        Ok((ExternalItem::VarDecl(declarators), loc))
     }
 
     fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItemNode> {
@@ -68,12 +68,12 @@ impl Parser {
             return Err(self.error(format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)));
         }
         self.next_token();
-        return if self.cur_token.token_type == TokenType::Lbrace {
+        if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
             Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }), loc))
         } else {
             Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }), loc))
-        };
+        }
     }
 
     fn parse_function_params(&mut self) -> Result<Vec<Parameter>> {
@@ -93,7 +93,7 @@ impl Parser {
         if self.cur_token.token_type != TokenType::Rparem {
             return Err(self.error(format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
         }
-        return Ok(parameters);
+        Ok(parameters)
     }
 
 }

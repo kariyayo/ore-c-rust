@@ -9,7 +9,7 @@ pub struct Error {
 
 impl Error {
     fn new(loc: &Loc, msg: String) -> Error {
-        return Error { errors: vec![build_error_msg(loc, msg)] };
+        Error { errors: vec![build_error_msg(loc, msg)] }
     }
 }
 
@@ -147,7 +147,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
                             Some(Error::new(external_item_loc, format!("struct member's type is not defined: {}", member.type_dec.type_name())))
                         }
                     }).collect();
-                    if es.len() > 0 {
+                    if !es.is_empty() {
                         results.extend(es);
                     } else {
                         env.put_type(type_ref.clone());
@@ -158,7 +158,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
             },
             ExternalItem::VarDecl(items) => {
                 for (type_ref, decl) in items {
-                    if let Err(e) = check_declarator(&mut env, type_ref, decl, external_item_loc) {
+                    if let Err(e) = check_declarator(&env, type_ref, decl) {
                         results.push(e);
                     } else {
                         env.put_vardecl(decl.name.as_str(), type_ref.clone());
@@ -166,8 +166,8 @@ pub fn check_type(ast: &Program) -> Result<()> {
                 }
             },
             ExternalItem::FunctionDecl(function) => {
-                let Function { return_type_dec, name, parameters, body } = function;
-                if let Err(e) = check_function_declaration(&mut env, return_type_dec, name, parameters, body, external_item_loc) {
+                let Function { return_type_dec, name: _, parameters, body } = function;
+                if let Err(e) = check_function_declaration(&mut env, return_type_dec, parameters, body, external_item_loc) {
                     results.push(e);
                 } else {
                     env.put_function(function.clone());
@@ -196,7 +196,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         Statement::Continue => todo!(),
         Statement::VarDecl(items) => {
             for (type_ref, decl) in items {
-                if let Err(e) = check_declarator(env, type_ref, decl, loc) {
+                if let Err(e) = check_declarator(env, type_ref, decl) {
                     results.push(e);
                 } else {
                     env.put_vardecl(&decl.name, type_ref.clone());
@@ -217,7 +217,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
                     if condition_type.type_name() != "int" {
                         results.push(Error::new(&condition.1, format!("type error. condition type is {}", condition_type.type_name())));
                     }
-                    results.extend(check_statement(env, &consequence));
+                    results.extend(check_statement(env, consequence));
                     if let Some(alt_stmt) = alternative {
                         results.extend(check_statement(env, alt_stmt));
                     }
@@ -260,7 +260,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 }
             }
         },
-        Expression::PrefixExpression { operator, right } => {
+        Expression::Prefix { operator, right } => {
             match operator.as_str() {
                 "!" | "-" | "++" | "--" => todo!(),
                 "*" => {
@@ -277,7 +277,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 _ => panic!("prefix is not supported. prefix is {}, right is {:?}", operator, right),
             }
         },
-        Expression::InfixExpression { operator, left, right } => {
+        Expression::Infix { operator, left, right } => {
             match operator.as_str() {
                 "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
                     check_basic_calc_operator(env, left, right)
@@ -313,9 +313,9 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 }
             }
         },
-        Expression::PostfixExpression { operator, left } => todo!(),
-        Expression::FunctionCallExpression { function_name, arguments } => {
-            let Some(f) = env.find_function(&function_name) else {
+        Expression::Postfix { operator, left } => todo!(),
+        Expression::FunctionCall { function_name, arguments } => {
+            let Some(f) = env.find_function(function_name) else {
                 return Err(Error::new(exp_loc, format!("function `{}` is not defined", function_name)));
             };
             if f.parameters.len() != arguments.len() {
@@ -347,8 +347,8 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 Err(Error { errors })
             }
         },
-        Expression::InitializerExpression { elements } => todo!(),
-        Expression::IndexExpression { left, index } => {
+        Expression::Initializer { elements } => todo!(),
+        Expression::Index { left, index } => {
             // as[x]の `x` の型がintであることをチェック
             let index_type = check_expression(env, index)?;
             if index_type.type_name() != "int" {
@@ -361,7 +361,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
             let var_type = check_expression(env, left)?;
             match var_type {
                 TypeRef::Pointer(inner_type) => Ok(inner_type.as_ref().clone()),
-                TypeRef::Array { type_dec, size } => Ok(type_dec.as_ref().clone()),
+                TypeRef::Array { type_dec, .. } => Ok(type_dec.as_ref().clone()),
                 _ => {
                     Err(Error::new(
                         &left.as_ref().1,
@@ -376,7 +376,6 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
 fn check_function_declaration(
     env: &mut Env,
     return_type_dec: &TypeRef,
-    name: &str,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
     loc: &Loc,
@@ -405,11 +404,11 @@ fn check_function_declaration(
     Err(Error { errors: results.into_iter().flat_map(|e| e.errors).collect() })
 }
 
-fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_loc: &Loc) -> Result<TypeRef> {
+fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator) -> Result<TypeRef> {
     let Some(exp) = &decl.value else {
         return Ok(type_ref.clone());
     };
-    let Expression::InitializerExpression { elements: init_elms } = &exp.0 else {
+    let Expression::Initializer { elements: init_elms } = &exp.0 else {
         // 右辺が初期化子ではない場合のチェック
         let var_type = check_expression(env, exp)?;
         if type_ref.type_name() != var_type.type_name() {
@@ -425,12 +424,12 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_l
     match type_ref {
         TypeRef::Named(_) => {
             if let Some(ty) = env.find_type(type_ref) {
-                check_declarator(env, &ty, decl, external_loc)
+                check_declarator(env, &ty, decl)
             } else {
                 Ok(type_ref.clone())
             }
         },
-        TypeRef::Pointer(innter_ty) => {
+        TypeRef::Pointer(_) => {
             Err(Error::new(loc, "invalid initializer for pointer type".to_string()))
         },
         TypeRef::Array { type_dec, size } => {
@@ -464,7 +463,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, external_l
         },
         TypeRef::Struct { tag_name: _, members: defined_members } => {
             if init_elms.len() != defined_members.len() {
-                return Err(Error::new(&loc, format!("initializer length should be {}, but is {}", defined_members.len(), init_elms.len())));
+                return Err(Error::new(loc, format!("initializer length should be {}, but is {}", defined_members.len(), init_elms.len())));
             }
             let errors: Vec<String> = init_elms
                 .iter()
@@ -518,7 +517,7 @@ fn check_basic_calc_operator(env: &Env, left: &ExpressionNode, right: &Expressio
 
 fn check_struct(env: &Env, left_type: &TypeRef, left_loc: &Loc, right: &ExpressionNode) -> Result<TypeRef> {
     // ".", "->" の左側オペランドが、structの定義に含まれているかチェック
-    let struct_defined = env.find_type(&left_type);
+    let struct_defined = env.find_type(left_type);
     struct_defined
         .ok_or(Error::new(left_loc, format!("struct `{}` is not defined", left_type.type_name())))
         .and_then(|def| {
@@ -529,7 +528,7 @@ fn check_struct(env: &Env, left_type: &TypeRef, left_loc: &Loc, right: &Expressi
             let (Expression::Identifier(operand_member), _) = right else {
                 return Err(Error::new(&right.1, format!("right is not Identifier. right: {:?}", right.0)));
             };
-            if let Some(defined) = defined_members.iter().find(|m| m.name == operand_member.to_string()) {
+            if let Some(defined) = defined_members.iter().find(|m| m.name == *operand_member) {
                 env.find_type(&defined.type_dec)
                     .ok_or(Error::new(&right.1, format!("field `{}` type is not defined", defined.type_dec.type_name())))
             } else {

@@ -27,9 +27,6 @@ impl Types {
     fn put(&mut self, name: &str) {
         self.entities.insert(name.to_string());
     }
-    fn find(&self, name: &str) -> bool {
-        self.entities.contains(name)
-    }
 }
 
 #[derive(Debug)]
@@ -74,7 +71,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
     for item_node in &ast.external_item_nodes {
         let (item, _) = item_node;
         match item {
-            ExternalItem::Struct(TypeRef::Struct { tag_name: Some(tag_name), members }) => {
+            ExternalItem::Struct(TypeRef::Struct { tag_name: Some(tag_name), members: _ }) => {
                 let s = format!("struct {}", tag_name);
                 types.put(s.as_str());
             },
@@ -137,7 +134,7 @@ fn check_function(
     // }
 
     // check parameters
-    let mut local_scope = LocalScope { parent: Some(&global_scope), entities: HashSet::new() };
+    let mut local_scope = LocalScope { parent: Some(global_scope), entities: HashSet::new() };
     for p in parameters {
         if local_scope.find(name) {
             return vec![Error{ errors: vec![format!("parameter `{}` is duplicated", name)] }]
@@ -192,8 +189,8 @@ fn check_statement(
             results
         },
         Statement::Block(statements) => {
-            let mut local_scope = LocalScope { parent: Some(&scope), entities: HashSet::new() };
-            statements.iter().map(|stmt| check_statement(functions, &mut local_scope, stmt)).flatten().collect()
+            let mut local_scope = LocalScope { parent: Some(scope), entities: HashSet::new() };
+            statements.iter().flat_map(|stmt| check_statement(functions, &mut local_scope, stmt)).collect()
         },
         Statement::If { condition, consequence, alternative } => {
             let mut results: Vec<Result<()>> = vec![];
@@ -201,7 +198,7 @@ fn check_statement(
             let mut consequence_result = check_statement(functions, scope, consequence);
             let mut alternative_result = alternative
                 .as_ref()
-                .map(|stmt| check_statement(functions, scope, &stmt))
+                .map(|stmt| check_statement(functions, scope, stmt))
                 .unwrap_or(vec![]);
             results.push(condition_result);
             results.append(&mut consequence_result);
@@ -212,7 +209,7 @@ fn check_statement(
             let mut results: Vec<Result<()>> = vec![];
             results.push(check_expression(functions, scope, condition));
             for stmt in &switch_block.body {
-                results.append(&mut check_statement(functions, scope, &stmt));
+                results.append(&mut check_statement(functions, scope, stmt));
             }
             results
         },
@@ -263,8 +260,8 @@ fn check_expression(
                 Ok(())
             }
         },
-        Expression::PrefixExpression { operator: _, right } => check_expression(functions, scope, right),
-        Expression::InfixExpression { operator, left, right } => {
+        Expression::Prefix { operator: _, right } => check_expression(functions, scope, right),
+        Expression::Infix { operator, left, right } => {
             check_expression(functions, scope, left)?;
 
             // 構造体のメンバーのチェックはscope_checkerの対象外とする
@@ -274,8 +271,8 @@ fn check_expression(
 
             check_expression(functions, scope, right)
         },
-        Expression::PostfixExpression { operator: _, left } => check_expression(functions, scope, left),
-        Expression::FunctionCallExpression { function_name, arguments } => {
+        Expression::Postfix { operator: _, left } => check_expression(functions, scope, left),
+        Expression::FunctionCall { function_name, arguments } => {
             if !functions.find(function_name) {
                 return Err(Error { errors: vec![format!("function `{}` is not defined", function_name)] });
             }
@@ -284,13 +281,13 @@ fn check_expression(
             }
             Ok(())
         },
-        Expression::InitializerExpression { elements } => {
+        Expression::Initializer { elements } => {
             for element in elements.iter() {
                 check_expression(functions, scope, element)?;
             }
             Ok(())
         },
-        Expression::IndexExpression { left, index } => {
+        Expression::Index { left, index } => {
             check_expression(functions, scope, left)?;
             check_expression(functions, scope, index)
         },
