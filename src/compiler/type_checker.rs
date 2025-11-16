@@ -47,9 +47,8 @@ impl TypeTable {
             TypeRef::Pointer(inner_type_ref) => {
                 self.find(inner_type_ref).map(|ty| TypeRef::Pointer(Box::new(ty)))
             }
-            // TODO:
-            TypeRef::Array { type_dec, .. } => {
-                self.find(type_dec)
+            TypeRef::Array { type_dec, size } => {
+                self.find(type_dec).map(|ty| TypeRef::Array { type_dec: Box::new(ty), size: *size })
             },
         }
     }
@@ -282,8 +281,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
             match operator.as_str() {
                 "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
                     check_basic_calc_operator(env, left, right)
-                }
-                "[" => todo!(),
+                },
                 "." => {
                     let left_type = check_expression(env, left)?;
                     check_struct(env, &left_type, &left.as_ref().1, right)
@@ -350,7 +348,28 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
             }
         },
         Expression::InitializerExpression { elements } => todo!(),
-        Expression::IndexExpression { left, index } => todo!(),
+        Expression::IndexExpression { left, index } => {
+            // as[x]の `x` の型がintであることをチェック
+            let index_type = check_expression(env, index)?;
+            if index_type.type_name() != "int" {
+                return Err(Error::new(
+                    &index.as_ref().1,
+                    format!( "index should be int. but it is `{}`.", index_type.type_name()),
+                ));
+            }
+            // as[x]の `as` の型を解決する
+            let var_type = check_expression(env, left)?;
+            match var_type {
+                TypeRef::Pointer(inner_type) => Ok(inner_type.as_ref().clone()),
+                TypeRef::Array { type_dec, size } => Ok(type_dec.as_ref().clone()),
+                _ => {
+                    Err(Error::new(
+                        &left.as_ref().1,
+                        format!( "index operand should be array. but it is `{}`.", var_type.type_name()),
+                    ))
+                }
+            }
+        },
     }
 } 
 
@@ -716,6 +735,86 @@ int main() {
             assert_eq!("error:22:7: right is not Identifier. right: Int(1)", errors[9]);
             assert_eq!("error:24:26: type mismatched for initializer. left type is int, right type is char*", errors[10]);
             assert_eq!("error:24:34: type mismatched for initializer. left type is char*, right type is int", errors[11]);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_check_valid_array() {
+        // given
+        let input = r#"
+int main() {
+    int xs[10];
+    xs[0] = 2;
+
+    int i = 1;
+    xs[i] = 5;
+
+    int* ip = &i;
+    xs[*ip] = 5;
+
+    int* ys;
+    ys[0] = 2;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert!(false, "errors: {:?}", errors);
+        } else {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_check_invalid_array() {
+        // given
+        let input = r#"
+int main() {
+    int xs[10];
+    xs[0] = "foo";
+    xs["a"] = 3;
+
+    int a;
+    a[0] = 2;
+
+    int i = 1;
+    xs[&i] = 5;
+
+    int* ip = &i;
+    xs[ip] = 5;
+
+    int* ys;
+    ys[0] = "foo";
+    ys["a"] = 3;
+    ys[&i] = 5;
+    ys[ip] = 5;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error{ errors }) = result.err() {
+            assert_eq!(errors.len(), 9);
+            assert_eq!("error:4:7: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
+            assert_eq!("error:5:5: index should be int. but it is `char*`.", errors[1]);
+            assert_eq!("error:8:5: index operand should be array. but it is `int`.", errors[2]);
+            assert_eq!("error:11:5: index should be int. but it is `int*`.", errors[3]);
+            assert_eq!("error:14:5: index should be int. but it is `int*`.", errors[4]);
+            assert_eq!("error:17:7: type mismatched for operator `=`. left type is int, right type is char*", errors[5]);
+            assert_eq!("error:18:5: index should be int. but it is `char*`.", errors[6]);
+            assert_eq!("error:19:5: index should be int. but it is `int*`.", errors[7]);
+            assert_eq!("error:20:5: index should be int. but it is `int*`.", errors[8]);
         } else {
             assert!(false);
         }
