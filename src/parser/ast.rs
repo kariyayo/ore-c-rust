@@ -2,10 +2,20 @@ use std::fmt;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TypeRef {
-    Named(String), // 名前付き型（例: int, char, void など）
-    Pointer(Box<TypeRef>), // ポインタ型（例: int*）
-    Array{ type_dec: Box<TypeRef>, size: Option<u32>}, // 配列型（例: int[10]）
-    Struct{ tag_name: Option<String>, members: Vec<StructDecl> }, // 構造体
+    // 名前付き型（例: int, char, void など）
+    Named(String),
+    // ポインタ型（例: int*）
+    Pointer(Box<TypeRef>),
+    // 配列型（例: int[10]）
+    Array {
+        type_dec: Box<TypeRef>,
+        size: Option<u32>,
+    },
+    // 構造体
+    Struct {
+        tag_name: Option<String>,
+        members: Vec<StructDecl>,
+    },
 }
 
 impl TypeRef {
@@ -13,15 +23,26 @@ impl TypeRef {
         match self {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
-            TypeRef::Array { type_dec: type_ref, size } => format!("{}[{}]", type_ref.type_name(), size.map_or("".to_string(), |x| x.to_string())),
+            TypeRef::Array {
+                type_dec: type_ref,
+                size,
+            } => format!(
+                "{}[{}]",
+                type_ref.type_name(),
+                size.map_or("".to_string(), |x| x.to_string())
+            ),
             TypeRef::Struct { tag_name, members } => {
                 if members.is_empty() {
-                    format!("struct {}", tag_name.as_ref().map_or("".to_string(), |x| x.to_string()))
+                    format!(
+                        "struct {}",
+                        tag_name.as_ref().map_or("".to_string(), |x| x.to_string())
+                    )
                 } else if tag_name.is_some() {
                     format!("struct {}", tag_name.as_ref().unwrap())
                 } else {
-                    let members_string = members.iter()
-                        .map(|StructDecl{ type_dec, name }| type_dec.type_name() + " " + name)
+                    let members_string = members
+                        .iter()
+                        .map(|StructDecl { type_dec, name }| type_dec.type_name() + " " + name)
                         .fold("\n".to_string(), |acc, x| acc + &format!("    {};\n", x));
                     format!("struct {{{}}}", members_string)
                 }
@@ -38,7 +59,10 @@ pub struct StructDecl {
 
 impl StructDecl {
     pub fn new(p: (TypeRef, String)) -> StructDecl {
-        StructDecl { type_dec: p.0, name: p.1 }
+        StructDecl {
+            type_dec: p.0,
+            name: p.1,
+        }
     }
 }
 
@@ -64,7 +88,10 @@ pub struct Parameter {
 
 impl Parameter {
     pub fn new(p: (TypeRef, String)) -> Parameter {
-        Parameter { type_dec: p.0, name: p.1 }
+        Parameter {
+            type_dec: p.0,
+            name: p.1,
+        }
     }
 }
 
@@ -75,7 +102,10 @@ pub struct Program {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct Loc { pub row: usize, pub col: usize }
+pub struct Loc {
+    pub row: usize,
+    pub col: usize,
+}
 
 /// トップレベルの宣言・定義を表すノード
 pub type ExternalItemNode = (ExternalItem, Loc);
@@ -97,11 +127,29 @@ pub enum Statement {
     Continue,
     VarDecl(Vec<(TypeRef, Declarator)>),
     Block(Vec<StatementNode>),
-    If { condition: ExpressionNode, consequence: Box<StatementNode>, alternative: Option<Box<StatementNode>> },
-    Switch { condition: ExpressionNode, switch_block: SwitchBlock },
-    While { condition: ExpressionNode, body: Box<StatementNode> },
-    DoWhile { body: Box<StatementNode>, condition: ExpressionNode },
-    For { init: Option<ExpressionNode>, condition: Option<ExpressionNode>, post: Option<ExpressionNode>, body: Box<StatementNode> },
+    If {
+        condition: ExpressionNode,
+        consequence: Box<StatementNode>,
+        alternative: Option<Box<StatementNode>>,
+    },
+    Switch {
+        condition: ExpressionNode,
+        switch_block: SwitchBlock,
+    },
+    While {
+        condition: ExpressionNode,
+        body: Box<StatementNode>,
+    },
+    DoWhile {
+        body: Box<StatementNode>,
+        condition: ExpressionNode,
+    },
+    For {
+        init: Option<ExpressionNode>,
+        condition: Option<ExpressionNode>,
+        post: Option<ExpressionNode>,
+        body: Box<StatementNode>,
+    },
     #[allow(clippy::enum_variant_names)]
     ExpressionStatement(ExpressionNode),
 }
@@ -114,7 +162,7 @@ pub struct Declarator {
 
 /// fallthrough に対応するため、switchブロック内の文を全てbodyにまとめておき、
 /// labels でラベルと、文のまとまり内における開始位置を管理する
-/// 
+///
 /// 例えば、以下のようなC言語コードの場合、
 /// switch (x) {
 /// case 1:
@@ -124,7 +172,7 @@ pub struct Declarator {
 ///     printf("Three\n");
 ///     break;
 /// }
-/// 
+///
 /// この SwitchBody は以下のように表現される
 /// SwitchBlock {
 ///     labels_entries: vec![
@@ -137,7 +185,7 @@ pub struct Declarator {
 ///         Break,
 ///     ],
 /// }
-/// 
+///
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SwitchBlock {
     pub label_entries: Vec<SwitchLabelEntry>,
@@ -165,12 +213,30 @@ pub enum Expression {
     CharacterLiteral(char),
     StringLiteral(String),
     Identifier(String),
-    Prefix { operator: String, right: Box<ExpressionNode> },
-    Infix { operator: String, left: Box<ExpressionNode>, right: Box<ExpressionNode> },
-    Postfix { operator: String, left: Box<ExpressionNode> },
-    FunctionCall { function_name: String, arguments: Vec<ExpressionNode> },
-    Initializer { elements: Vec<ExpressionNode> },
-    Index { left: Box<ExpressionNode>, index: Box<ExpressionNode> },
+    Prefix {
+        operator: String,
+        right: Box<ExpressionNode>,
+    },
+    Infix {
+        operator: String,
+        left: Box<ExpressionNode>,
+        right: Box<ExpressionNode>,
+    },
+    Postfix {
+        operator: String,
+        left: Box<ExpressionNode>,
+    },
+    FunctionCall {
+        function_name: String,
+        arguments: Vec<ExpressionNode>,
+    },
+    Initializer {
+        elements: Vec<ExpressionNode>,
+    },
+    Index {
+        left: Box<ExpressionNode>,
+        index: Box<ExpressionNode>,
+    },
 }
 
 impl fmt::Display for Program {
@@ -182,11 +248,9 @@ impl fmt::Display for Program {
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Statement::Return(value) => {
-                match value {
-                    Some((v, _)) => write!(f, "return {};", v),
-                    None => write!(f, "return;"),
-                }
+            Statement::Return(value) => match value {
+                Some((v, _)) => write!(f, "return {};", v),
+                None => write!(f, "return;"),
             },
             Statement::Break => write!(f, "break;"),
             Statement::Continue => write!(f, "continue;"),
@@ -200,7 +264,7 @@ impl fmt::Display for Statement {
                     parts.push(s);
                 }
                 write!(f, "{};", parts.join(", "))
-            },
+            }
             Statement::Block(statements) => {
                 let mut result = "{\n".to_string();
                 for (stmt, _) in statements {
@@ -208,25 +272,32 @@ impl fmt::Display for Statement {
                 }
                 result.push('}');
                 write!(f, "{}", result)
-            },
-            Statement::If { condition, consequence, alternative } => {
+            }
+            Statement::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
                 let mut result = format!("if ({}) {}", condition.0, consequence.0);
                 if let Some(alt) = alternative {
                     result.push_str(&format!(" else {}", alt.0));
                 }
                 write!(f, "{}", result)
-            },
-            Statement::Switch { condition, switch_block: switch_body } => {
+            }
+            Statement::Switch {
+                condition,
+                switch_block: switch_body,
+            } => {
                 let mut result = format!("switch ({}) {{\n", condition.0);
                 for label_entry in &switch_body.label_entries {
                     for label in &label_entry.labels {
                         match label {
                             SwitchLabel::Case(expr) => {
                                 result.push_str(&format!("    case {}:\n", expr.0));
-                            },
+                            }
                             SwitchLabel::Default => {
                                 result.push_str("    default:\n");
-                            },
+                            }
                         }
                     }
                     for stmt in &switch_body.body[label_entry.start_index as usize..] {
@@ -235,14 +306,19 @@ impl fmt::Display for Statement {
                 }
                 result.push('}');
                 write!(f, "{}", result)
-            },
+            }
             Statement::While { condition, body } => {
                 write!(f, "while ({}) {}", condition.0, body.0)
-            },
+            }
             Statement::DoWhile { body, condition } => {
                 write!(f, "do {} while ({});", body.0, condition.0)
-            },
-            Statement::For { init, condition, post, body } => {
+            }
+            Statement::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
                 let init_str = match init {
                     Some(i) => i.0.to_string(),
                     None => "".to_string(),
@@ -255,11 +331,15 @@ impl fmt::Display for Statement {
                     Some(p) => p.0.to_string(),
                     None => "".to_string(),
                 };
-                write!(f, "for ({}, {}, {}) {}", init_str, condition_str, post_str, body.0)
-            },
+                write!(
+                    f,
+                    "for ({}, {}, {}) {}",
+                    init_str, condition_str, post_str, body.0
+                )
+            }
             Statement::ExpressionStatement(expression) => {
                 write!(f, "{};", expression.0)
-            },
+            }
         }
     }
 }
@@ -267,30 +347,37 @@ impl fmt::Display for Statement {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::Int(value) => write!(f, "{}",value),
+            Expression::Int(value) => write!(f, "{}", value),
             Expression::CharacterLiteral(value) => write!(f, "{}", value),
             Expression::StringLiteral(value) => write!(f, "{}", value),
             Expression::Identifier(value) => write!(f, "{}", value),
             Expression::Prefix { operator, right } => {
                 write!(f, "({}{})", operator, right.0)
-            },
-            Expression::Infix { operator, left, right } => {
+            }
+            Expression::Infix {
+                operator,
+                left,
+                right,
+            } => {
                 write!(f, "({} {} {})", left.0, operator, right.0)
-            },
+            }
             Expression::Postfix { operator, left } => {
                 write!(f, "({}{})", left.0, operator)
-            },
-            Expression::FunctionCall { function_name, arguments } => {
+            }
+            Expression::FunctionCall {
+                function_name,
+                arguments,
+            } => {
                 let args: Vec<String> = arguments.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{}({})", function_name, args.join(", "))
-            },
+            }
             Expression::Initializer { elements } => {
                 let args: Vec<String> = elements.iter().map(|arg| arg.0.to_string()).collect();
                 write!(f, "{{{}}}", args.join(", "))
-            },
+            }
             Expression::Index { left, index } => {
                 write!(f, "({}[{}])", left.0, index.0)
-            },
+            }
         }
     }
 }

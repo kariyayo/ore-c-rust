@@ -100,7 +100,12 @@ pub struct Token {
 
 impl Token {
     pub fn new() -> Token {
-        Token { token_type: TokenType::Eof, raw_string: "".to_string(), row: 0, col: 0 }
+        Token {
+            token_type: TokenType::Eof,
+            raw_string: "".to_string(),
+            row: 0,
+            col: 0,
+        }
     }
 
     pub fn literal(&self) -> String {

@@ -1,5 +1,5 @@
+use super::ast::{ExternalItem, ExternalItemNode, Function, Parameter, TypeRef};
 use super::{Parser, Result, TokenType};
-use super::ast::{ExternalItem, ExternalItemNode, TypeRef, Function, Parameter};
 
 impl Parser {
     pub(super) fn parse_external_item(&mut self) -> Result<ExternalItemNode> {
@@ -18,19 +18,23 @@ impl Parser {
         }
 
         match self.cur_token.token_type {
-            TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Short | TokenType::Long | TokenType::Ident => {
-                let type_dec = 
-                    struct_type_dec.unwrap_or_else(|| {
-                        // 関数宣言で、返り値の型を省略している場合を考慮する
-                        if self.peek_token.token_type == TokenType::Lparem {
-                            // 省略されている場合は、int型とする
-                            TypeRef::Named("int".to_string())
-                        } else {
-                            let tmp = TypeRef::Named(self.cur_token.literal());
-                            self.next_token();
-                            tmp
-                        }
-                    });
+            TokenType::Int
+            | TokenType::Void
+            | TokenType::Char
+            | TokenType::Short
+            | TokenType::Long
+            | TokenType::Ident => {
+                let type_dec = struct_type_dec.unwrap_or_else(|| {
+                    // 関数宣言で、返り値の型を省略している場合を考慮する
+                    if self.peek_token.token_type == TokenType::Lparem {
+                        // 省略されている場合は、int型とする
+                        TypeRef::Named("int".to_string())
+                    } else {
+                        let tmp = TypeRef::Named(self.cur_token.literal());
+                        self.next_token();
+                        tmp
+                    }
+                });
 
                 if self.peek_token.token_type == TokenType::Lparem {
                     // 関数
@@ -40,9 +44,10 @@ impl Parser {
                     self.parse_external_vardecl(type_dec)
                 }
             }
-            _ => {
-                Err(self.error(format!("[parse_external_item] expected external item token, got {:?}", self.cur_token.token_type)))
-            }
+            _ => Err(self.error(format!(
+                "[parse_external_item] expected external item token, got {:?}",
+                self.cur_token.token_type
+            ))),
         }
     }
 
@@ -50,7 +55,10 @@ impl Parser {
         let loc = self.cur_token.loc();
         let declarators = self.parse_declarators(&type_dec)?;
         if self.cur_token.token_type != TokenType::Semicolon {
-            return Err(self.error(format!("[parse_external_item] expected next token to be Semicolon, got {:?}", self.peek_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_external_item] expected next token to be Semicolon, got {:?}",
+                self.peek_token.token_type
+            )));
         }
         Ok((ExternalItem::VarDecl(declarators), loc))
     }
@@ -58,51 +66,74 @@ impl Parser {
     fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItemNode> {
         let loc = self.cur_token.loc();
         if self.cur_token.token_type != TokenType::Ident {
-            return Err(self.error(format!("[parse_external_function] expected next token to be IDENT, got {:?}", self.peek_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_external_function] expected next token to be IDENT, got {:?}",
+                self.peek_token.token_type
+            )));
         }
         let name = self.cur_token.literal();
 
         self.next_token(); // cur_token is Lparam
         let parameters = self.parse_function_params()?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(self.error(format!("[parse_external_function] expected next token to be Rparem, got {:?}", self.peek_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_external_function] expected next token to be Rparem, got {:?}",
+                self.peek_token.token_type
+            )));
         }
         self.next_token();
         if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
-            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: Some(Box::new(body)) }), loc))
+            Ok((
+                ExternalItem::FunctionDecl(Function {
+                    return_type_dec,
+                    name,
+                    parameters,
+                    body: Some(Box::new(body)),
+                }),
+                loc,
+            ))
         } else {
-            Ok((ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body: None }), loc))
+            Ok((
+                ExternalItem::FunctionDecl(Function {
+                    return_type_dec,
+                    name,
+                    parameters,
+                    body: None,
+                }),
+                loc,
+            ))
         }
     }
 
     fn parse_function_params(&mut self) -> Result<Vec<Parameter>> {
         let mut parameters: Vec<Parameter> = vec![];
         if self.cur_token.token_type != TokenType::Lparem {
-            return Err(self.error(format!("[parse_function_params] expected next token to be Lparem, got {:?}", self.peek_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_function_params] expected next token to be Lparem, got {:?}",
+                self.peek_token.token_type
+            )));
         }
         self.next_token();
         if self.cur_token.token_type == TokenType::Rparem {
             return Ok(parameters);
         }
-        parameters = self.parse_type_decls(
-            TokenType::Comma,
-            TokenType::Rparem,
-            Parameter::new,
-        )?;
+        parameters = self.parse_type_decls(TokenType::Comma, TokenType::Rparem, Parameter::new)?;
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(self.error(format!("[parse_function_params] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_function_params] expected next token to be Rparem, got {:?}",
+                self.cur_token.token_type
+            )));
         }
         Ok(parameters)
     }
-
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::lexer::Lexer;
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
     fn test_external_vardecl() {
@@ -134,12 +165,15 @@ char c2 = '\n';
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::VarDecl(declarators)  => {
+                ExternalItem::VarDecl(declarators) => {
                     for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
                         assert_eq!(declarator.name, *expected_name);
-                        assert_eq!(declarator.value.as_ref().map(|x| x.0.to_string()), *expected_value);
+                        assert_eq!(
+                            declarator.value.as_ref().map(|x| x.0.to_string()),
+                            *expected_value
+                        );
                     }
                 }
                 _ => panic!("ExternalItem is not VarDecl"),
@@ -175,41 +209,30 @@ struct point* movepoint(struct point* p, int x, int y);
                     Parameter {
                         type_dec: TypeRef::Named("int".to_string()),
                         name: "b".to_string(),
-                    }
+                    },
                 ],
                 Some("{\n    return (a + b);\n}".to_string()),
             ),
-            (
-                "int",
-                "hoge",
-                vec![],
-                Some("{\n}".to_string()),
-            ),
+            ("int", "hoge", vec![], Some("{\n}".to_string())),
             (
                 "int",
                 "foo",
-                vec![
-                    Parameter {
-                        type_dec: TypeRef::Pointer(
-                            Box::new(TypeRef::Named("int".to_string())),
-                        ),
-                        name: "as".to_string(),
-                    },
-                ],
+                vec![Parameter {
+                    type_dec: TypeRef::Pointer(Box::new(TypeRef::Named("int".to_string()))),
+                    name: "as".to_string(),
+                }],
                 None,
             ),
             (
                 "int",
                 "bar",
-                vec![
-                    Parameter {
-                        type_dec: TypeRef::Array{
-                            type_dec: Box::new(TypeRef::Named("int".to_string())),
-                            size: None,
-                        },
-                        name: "as".to_string(),
+                vec![Parameter {
+                    type_dec: TypeRef::Array {
+                        type_dec: Box::new(TypeRef::Named("int".to_string())),
+                        size: None,
                     },
-                ],
+                    name: "as".to_string(),
+                }],
                 None,
             ),
             (
@@ -217,11 +240,17 @@ struct point* movepoint(struct point* p, int x, int y);
                 "addpoint",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        type_dec: TypeRef::Struct {
+                            tag_name: Some("point".to_string()),
+                            members: vec![],
+                        },
                         name: "p".to_string(),
                     },
                     Parameter {
-                        type_dec: TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], },
+                        type_dec: TypeRef::Struct {
+                            tag_name: Some("point".to_string()),
+                            members: vec![],
+                        },
                         name: "q".to_string(),
                     },
                 ],
@@ -232,7 +261,10 @@ struct point* movepoint(struct point* p, int x, int y);
                 "movepoint",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Pointer(Box::new(TypeRef::Struct { tag_name: Some("point".to_string()), members: vec![], })),
+                        type_dec: TypeRef::Pointer(Box::new(TypeRef::Struct {
+                            tag_name: Some("point".to_string()),
+                            members: vec![],
+                        })),
                         name: "p".to_string(),
                     },
                     Parameter {
@@ -242,7 +274,7 @@ struct point* movepoint(struct point* p, int x, int y);
                     Parameter {
                         type_dec: TypeRef::Named("int".to_string()),
                         name: "y".to_string(),
-                    }
+                    },
                 ],
                 None,
             ),
@@ -260,9 +292,18 @@ struct point* movepoint(struct point* p, int x, int y);
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::FunctionDecl(Function { return_type_dec, name, parameters, body }) => {
-                    let (expected_return_type, expected_name, expected_parameters, expected_body) = &expected[row_num];
-                    assert_eq!(return_type_dec.type_name(), expected_return_type.to_string());
+                ExternalItem::FunctionDecl(Function {
+                    return_type_dec,
+                    name,
+                    parameters,
+                    body,
+                }) => {
+                    let (expected_return_type, expected_name, expected_parameters, expected_body) =
+                        &expected[row_num];
+                    assert_eq!(
+                        return_type_dec.type_name(),
+                        expected_return_type.to_string()
+                    );
                     assert_eq!(*name, *expected_name);
                     assert_eq!(parameters, expected_parameters);
                     assert_eq!(body.as_ref().map(|x| x.0.to_string()), *expected_body);
@@ -304,8 +345,21 @@ struct key {
             match item {
                 ExternalItem::Struct(TypeRef::Struct { tag_name, members }) => {
                     let (_, expected_members, expected_tag_name) = &expected[row_num];
-                    assert_eq!(tag_name.as_ref().map(|x| x.to_string()).unwrap_or("".to_string()), expected_tag_name.unwrap_or(""));
-                    assert_eq!(members.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("; "), expected_members.to_string());
+                    assert_eq!(
+                        tag_name
+                            .as_ref()
+                            .map(|x| x.to_string())
+                            .unwrap_or("".to_string()),
+                        expected_tag_name.unwrap_or("")
+                    );
+                    assert_eq!(
+                        members
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<String>>()
+                            .join("; "),
+                        expected_members.to_string()
+                    );
                 }
                 _ => panic!("Statement is not Struct"),
             }

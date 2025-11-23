@@ -1,6 +1,6 @@
-pub mod repl;
 mod lexer;
 mod parser;
+pub mod repl;
 mod sema;
 
 pub fn create_parser(input: &str) -> parser::Parser {
