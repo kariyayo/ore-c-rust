@@ -1,24 +1,24 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use super::{Parser, Result, TokenType};
 use super::ast::{Expression, ExpressionNode};
+use super::{Parser, Result, TokenType};
 
 // 式の優先順位。
 // 値が大きいほど優先順位が高く、ASTの深いレベルに配置される。
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum ExpressionPrecedence {
     Lowest,
-    Assign, // =
-    Or, // ||
-    And, // &&
-    Equals, // ==
+    Assign,      // =
+    Or,          // ||
+    And,         // &&
+    Equals,      // ==
     LessGreater, // > または <
-    Sum, // +
-    Product, // *
-    Prefix, // -X, !X, ++X, --X
-    Postfix, // X++, X--
-    Call, // myFunction(X)
+    Sum,         // +
+    Product,     // *
+    Prefix,      // -X, !X, ++X, --X
+    Postfix,     // X++, X--
+    Call,        // myFunction(X)
     Index,
 }
 
@@ -52,78 +52,75 @@ fn precedences() -> &'static HashMap<TokenType, ExpressionPrecedence> {
         precedences.insert(TokenType::Lbracket, ExpressionPrecedence::Index);
         precedences.insert(TokenType::Dot, ExpressionPrecedence::Call);
         precedences.insert(TokenType::Arrow, ExpressionPrecedence::Call);
-        return precedences;
+        precedences
     })
 }
 
 fn is_infix_token_type(token_type: TokenType) -> bool {
-    return match token_type {
+    matches!(
+        token_type,
         TokenType::Plus
-        | TokenType::Minus
-        | TokenType::Slash
-        | TokenType::Asterisk
-        | TokenType::Percent
-        | TokenType::Eq
-        | TokenType::NotEq
-        | TokenType::Lt
-        | TokenType::LtEq
-        | TokenType::Gt
-        | TokenType::GtEq
-        | TokenType::And
-        | TokenType::Or
-        | TokenType::Assign
-        | TokenType::PlusAssign
-        | TokenType::MinusAssign
-        | TokenType::AsteriskAssign
-        | TokenType::SlashAssign
-        | TokenType::PercentAssign
-        | TokenType::Lparem
-        | TokenType::Lbracket
-        | TokenType::Dot
-        | TokenType::Arrow => {
-            true
-        }
-        _ => {
-            false
-        }
-    };
+            | TokenType::Minus
+            | TokenType::Slash
+            | TokenType::Asterisk
+            | TokenType::Percent
+            | TokenType::Eq
+            | TokenType::NotEq
+            | TokenType::Lt
+            | TokenType::LtEq
+            | TokenType::Gt
+            | TokenType::GtEq
+            | TokenType::And
+            | TokenType::Or
+            | TokenType::Assign
+            | TokenType::PlusAssign
+            | TokenType::MinusAssign
+            | TokenType::AsteriskAssign
+            | TokenType::SlashAssign
+            | TokenType::PercentAssign
+            | TokenType::Lparem
+            | TokenType::Lbracket
+            | TokenType::Dot
+            | TokenType::Arrow
+    )
 }
 
 fn is_postfix_token_type(token_type: TokenType) -> bool {
-    return match token_type {
-        TokenType::Increment | TokenType::Decrement => {
-            true
-        }
-        _ => false
-    }
+    matches!(token_type, TokenType::Increment | TokenType::Decrement)
 }
 
 /// Pratt構文解析器
-/// 
+///
 /// 式の解析において、構文解析関数を文法ルールに関連づけるのではなく、単一のトークンタイプに関連づける。
 /// それぞれのトークンタイプに対して、中置演算子と前置演算子と、2つの構文解析関数を関連づける。
 impl Parser {
     // 現在のトークンの次のトークン優先順位を返す
     fn peek_precedence(&self) -> ExpressionPrecedence {
-        return *precedences().get(&self.peek_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
+        *precedences()
+            .get(&self.peek_token.token_type)
+            .unwrap_or(&ExpressionPrecedence::Lowest)
     }
 
     // 現在のトークンの優先順位を返す
     fn cur_precedence(&self) -> ExpressionPrecedence {
-        return *precedences().get(&self.cur_token.token_type).unwrap_or(&ExpressionPrecedence::Lowest);
+        *precedences()
+            .get(&self.cur_token.token_type)
+            .unwrap_or(&ExpressionPrecedence::Lowest)
     }
 
     // 式をパースする
-    pub(super) fn parse_expression(&mut self, precedence: ExpressionPrecedence) -> Result<ExpressionNode> {
+    pub(super) fn parse_expression(
+        &mut self,
+        precedence: ExpressionPrecedence,
+    ) -> Result<ExpressionNode> {
         // まず、前置演算子もしくはリテラルをパースする
         let prefix_result = self.prefix();
         match prefix_result {
-            None => {
-                return Err(self.error(format!("[parse_expression] no prefix parse function for {:?}", self.cur_token.token_type)));
-            }
-            Some(Err(e)) => {
-                return Err(e);
-            }
+            None => Err(self.error(format!(
+                "[parse_expression] no prefix parse function for {:?}",
+                self.cur_token.token_type
+            ))),
+            Some(Err(e)) => Err(e),
             Some(Ok(exp)) => {
                 let mut result = exp;
                 loop {
@@ -137,7 +134,9 @@ impl Parser {
                     //
                     // 例えば、`5 * 5 + 3` の場合、`5 * 5` が終わった時点で `*` の優先順位(`precedence`)が
                     // 次の演算子 `+` の優先順位(`self.peek_precedence`)より高いので `5 * 5` のparse結果を返す。
-                    if self.peek_token.token_type == TokenType::Semicolon || precedence >= self.peek_precedence() {
+                    if self.peek_token.token_type == TokenType::Semicolon
+                        || precedence >= self.peek_precedence()
+                    {
                         return Ok(result);
                     }
 
@@ -161,75 +160,79 @@ impl Parser {
 
     fn prefix(&mut self) -> Option<Result<ExpressionNode>> {
         let current_token_type = self.cur_token.token_type;
-        let result = match current_token_type {
-            TokenType::Ident => {
-                Some(self.parse_identifier())
-            }
-            TokenType::Integer => {
-                Some(self.parse_integer_literal())
-            }
-            TokenType::Character => {
-                Some(self.parse_character_literal())
-            }
-            TokenType::String => {
-                Some(self.parse_string_literal())
-            }
+        match current_token_type {
+            TokenType::Ident => Some(self.parse_identifier()),
+            TokenType::Integer => Some(self.parse_integer_literal()),
+            TokenType::Character => Some(self.parse_character_literal()),
+            TokenType::String => Some(self.parse_string_literal()),
             TokenType::Bang
             | TokenType::Minus
             | TokenType::Increment
             | TokenType::Decrement
             | TokenType::Asterisk
-            | TokenType::Ampersand => {
-                Some(self.parse_prefix_expression())
-            }
-            TokenType::Lparem => {
-                Some(self.parse_grouped_expression())
-            }
-            TokenType::Lbrace => {
-                Some(self.parse_initializer_expression())
-            }
-            _ => {
-                None
-            }
-        };
-        return result;
+            | TokenType::Ampersand => Some(self.parse_prefix_expression()),
+            TokenType::Lparem => Some(self.parse_grouped_expression()),
+            TokenType::Lbrace => Some(self.parse_initializer_expression()),
+            _ => None,
+        }
     }
 
     fn infix(&mut self, left: ExpressionNode) -> Result<ExpressionNode> {
-        return if self.cur_token.token_type == TokenType::Lparem {
+        if self.cur_token.token_type == TokenType::Lparem {
             self.parse_function_call_expression(left)
         } else if self.cur_token.token_type == TokenType::Lbracket {
             self.parse_index_expression(left)
         } else {
             self.parse_infix_expression(left)
-        };
+        }
     }
 
     pub(super) fn parse_identifier(&self) -> Result<ExpressionNode> {
-        Ok((Expression::Identifier(self.cur_token.literal()), self.cur_token.loc()))
+        Ok((
+            Expression::Identifier(self.cur_token.literal()),
+            self.cur_token.loc(),
+        ))
     }
 
     pub(super) fn parse_integer_literal(&self) -> Result<ExpressionNode> {
-        self.cur_token.literal().parse()
+        self.cur_token
+            .literal()
+            .parse()
             .map(|value| (Expression::Int(value), self.cur_token.loc()))
             .map_err(|_| self.error("[parse_integer_literal] parse int error".to_string()))
     }
 
     pub(super) fn parse_character_literal(&self) -> Result<ExpressionNode> {
-        self.cur_token.literal().parse()
+        self.cur_token
+            .literal()
+            .parse()
             .map(|value| (Expression::CharacterLiteral(value), self.cur_token.loc()))
-            .map_err(|_| self.error(format!("[parse_character_literal] parse character error. cur_token is {:?}", self.cur_token).to_string()))
+            .map_err(|_| {
+                self.error(
+                    format!(
+                        "[parse_character_literal] parse character error. cur_token is {:?}",
+                        self.cur_token
+                    )
+                    .to_string(),
+                )
+            })
     }
 
     pub(super) fn parse_string_literal(&self) -> Result<ExpressionNode> {
-        Ok((Expression::StringLiteral(self.cur_token.literal()), self.cur_token.loc()))
+        Ok((
+            Expression::StringLiteral(self.cur_token.literal()),
+            self.cur_token.loc(),
+        ))
     }
 
     pub(super) fn parse_grouped_expression(&mut self) -> Result<ExpressionNode> {
         self.next_token();
         let exp = self.parse_expression(ExpressionPrecedence::Lowest);
         if self.peek_token.token_type != TokenType::Rparem {
-            return Err(self.error(format!("[parse_grouped_expression] expected next token to be Rparem, got {:?}", self.peek_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_grouped_expression] expected next token to be Rparem, got {:?}",
+                self.peek_token.token_type
+            )));
         }
         self.next_token();
         exp
@@ -240,7 +243,7 @@ impl Parser {
         self.next_token();
         let mut elements: Vec<ExpressionNode> = vec![];
         if self.cur_token.token_type == TokenType::Rbrace {
-            return Ok((Expression::InitializerExpression { elements }, loc));
+            return Ok((Expression::Initializer { elements }, loc));
         }
         while self.cur_token.token_type != TokenType::Rbrace {
             let value = self.parse_expression(ExpressionPrecedence::Lowest)?;
@@ -252,9 +255,12 @@ impl Parser {
             self.next_token(); // `,` を読み飛ばす
         }
         if self.cur_token.token_type != TokenType::Rbrace {
-            return Err(self.error(format!("[parse_initializer_expression] expected next token to be Rbrace, got {:?}", self.cur_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_initializer_expression] expected next token to be Rbrace, got {:?}",
+                self.cur_token.token_type
+            )));
         }
-        Ok((Expression::InitializerExpression { elements }, loc))
+        Ok((Expression::Initializer { elements }, loc))
     }
 
     // !, -, ++, --, *, & の前置演算子をパースする
@@ -263,12 +269,21 @@ impl Parser {
         let operator = self.cur_token.literal();
         self.next_token();
         self.parse_expression(ExpressionPrecedence::Prefix)
-            .map(|right|
-                (Expression::PrefixExpression { operator, right: Box::new(right) }, loc)
-            )
+            .map(|right| {
+                (
+                    Expression::Prefix {
+                        operator,
+                        right: Box::new(right),
+                    },
+                    loc,
+                )
+            })
     }
 
-    pub(super) fn parse_function_call_expression(&mut self, left: ExpressionNode) -> Result<ExpressionNode> {
+    pub(super) fn parse_function_call_expression(
+        &mut self,
+        left: ExpressionNode,
+    ) -> Result<ExpressionNode> {
         let loc = self.cur_token.loc();
         let function_name = match left {
             (Expression::Identifier(value), _) => value,
@@ -291,46 +306,82 @@ impl Parser {
             }
         }
         if self.cur_token.token_type != TokenType::Rparem {
-            return Err(self.error(format!("[parse_function_call_expression] expected next token to be Rparem, got {:?}", self.cur_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_function_call_expression] expected next token to be Rparem, got {:?}",
+                self.cur_token.token_type
+            )));
         }
-        Ok((Expression::FunctionCallExpression { function_name, arguments }, loc))
+        Ok((
+            Expression::FunctionCall {
+                function_name,
+                arguments,
+            },
+            loc,
+        ))
     }
 
-    pub(super) fn parse_index_expression(&mut self, left: ExpressionNode) -> Result<ExpressionNode> {
+    pub(super) fn parse_index_expression(
+        &mut self,
+        left: ExpressionNode,
+    ) -> Result<ExpressionNode> {
         let loc = self.cur_token.loc();
         self.next_token();
         let right = self.parse_expression(ExpressionPrecedence::Lowest)?;
         self.next_token();
         if self.cur_token.token_type != TokenType::Rbracket {
-            return Err(self.error(format!("[parse_index_expression] expected next token to be Rbracket, got {:?}", self.cur_token.token_type)));
+            return Err(self.error(format!(
+                "[parse_index_expression] expected next token to be Rbracket, got {:?}",
+                self.cur_token.token_type
+            )));
         }
-        Ok((Expression::IndexExpression { left: Box::new(left), index: Box::new(right) }, loc))
+        Ok((
+            Expression::Index {
+                left: Box::new(left),
+                index: Box::new(right),
+            },
+            loc,
+        ))
     }
 
-    pub(super) fn parse_infix_expression(&mut self, left: ExpressionNode) -> Result<ExpressionNode> {
+    pub(super) fn parse_infix_expression(
+        &mut self,
+        left: ExpressionNode,
+    ) -> Result<ExpressionNode> {
         let loc = self.cur_token.loc();
         let operator = self.cur_token.literal();
         let operator_precedence = self.cur_precedence();
         self.next_token();
-        self.parse_expression(operator_precedence)
-            .map(|right|
-                (Expression::InfixExpression { operator, left: Box::new(left), right: Box::new(right) }, loc)
+        self.parse_expression(operator_precedence).map(|right| {
+            (
+                Expression::Infix {
+                    operator,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                loc,
             )
+        })
     }
 
     // ++, -- の後置演算子をパースする
     pub(super) fn parse_postfix_expression(&mut self, left: ExpressionNode) -> ExpressionNode {
         let loc = self.cur_token.loc();
         let operator = self.cur_token.literal();
-        return (Expression::PostfixExpression { operator, left: Box::new(left) }, loc)
+        (
+            Expression::Postfix {
+                operator,
+                left: Box::new(left),
+            },
+            loc,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::lexer::Lexer;
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
     fn test_operator_precedence() {
@@ -351,7 +402,10 @@ mod tests {
             ("-5 * 5", "((-5) * 5)"),
             ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4))"),
             ("5 <= 4 != 3 >= 4", "((5 <= 4) != (3 >= 4))"),
-            ("3 + 4 * 5 == 3 * 1 + 4 * 5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
             ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
             ("(5 + 5) * 2", "((5 + 5) * 2)"),
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
@@ -382,5 +436,4 @@ mod tests {
             assert_eq!(expected.to_string(), parse_result.0.to_string());
         }
     }
-
 }

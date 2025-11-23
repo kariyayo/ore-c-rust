@@ -22,7 +22,7 @@ impl Lexer {
             col: 0,
         };
         l.read_char();
-        return l;
+        l
     }
 
     fn read_char(&mut self) {
@@ -55,7 +55,7 @@ impl Lexer {
     }
 
     fn is_letter(&self, ch: char) -> bool {
-        return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_';
+        ch.is_ascii_lowercase() || ch.is_ascii_uppercase() || ch == '_'
     }
 
     fn read_identifier(&mut self) -> String {
@@ -63,11 +63,11 @@ impl Lexer {
         while self.is_letter(self.ch) || self.is_digit(self.ch) {
             self.read_char();
         }
-        return self.input[start_pos..self.position].to_string();
+        self.input[start_pos..self.position].to_string()
     }
 
     fn is_digit(&self, ch: char) -> bool {
-        return '0' <= ch && ch <= '9';
+        ch.is_ascii_digit()
     }
 
     fn read_number(&mut self) -> String {
@@ -75,20 +75,19 @@ impl Lexer {
         while self.is_digit(self.ch) {
             self.read_char();
         }
-        return self.input[start_pos..self.position].to_string();
+        self.input[start_pos..self.position].to_string()
     }
 
     fn peek_char(&self) -> char {
-        return self
-            .input
+        self.input
             .chars()
             .nth(self.read_position)
-            .unwrap_or('\u{0}');
+            .unwrap_or('\u{0}')
     }
 
     fn read_character_raw(&mut self) -> String {
         self.read_char();
-        return if self.ch == '\\' {
+        if self.ch == '\\' {
             self.read_char();
             let c = self.ch;
             self.read_char();
@@ -97,7 +96,7 @@ impl Lexer {
             let c = self.ch;
             self.read_char();
             format!("'{}'", c)
-        };
+        }
     }
 
     fn read_string_raw(&mut self) -> String {
@@ -160,7 +159,7 @@ impl Lexer {
                 } else {
                     (TokenType::Plus, self.ch.to_string(), false)
                 }
-            },
+            }
             '-' => {
                 if self.peek_char() == '-' {
                     self.read_char();
@@ -174,7 +173,7 @@ impl Lexer {
                 } else {
                     (TokenType::Minus, self.ch.to_string(), false)
                 }
-            },
+            }
             '*' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -182,7 +181,7 @@ impl Lexer {
                 } else {
                     (TokenType::Asterisk, self.ch.to_string(), false)
                 }
-            },
+            }
             '/' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -190,7 +189,7 @@ impl Lexer {
                 } else {
                     (TokenType::Slash, self.ch.to_string(), false)
                 }
-            },
+            }
             '%' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -198,7 +197,7 @@ impl Lexer {
                 } else {
                     (TokenType::Percent, self.ch.to_string(), false)
                 }
-            },
+            }
             '<' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -206,7 +205,7 @@ impl Lexer {
                 } else {
                     (TokenType::Lt, self.ch.to_string(), false)
                 }
-            },
+            }
             '>' => {
                 if self.peek_char() == '=' {
                     self.read_char();
@@ -214,7 +213,7 @@ impl Lexer {
                 } else {
                     (TokenType::Gt, self.ch.to_string(), false)
                 }
-            },
+            }
             '&' => {
                 if self.peek_char() == '&' {
                     self.read_char();
@@ -222,7 +221,7 @@ impl Lexer {
                 } else {
                     (TokenType::Ampersand, self.ch.to_string(), false)
                 }
-            },
+            }
             '|' => {
                 if self.peek_char() == '|' {
                     self.read_char();
@@ -258,12 +257,12 @@ impl Lexer {
             self.read_char();
         }
         let raw_len = raw.len();
-        return Token {
+        Token {
             token_type,
             raw_string: raw,
             row: self.row,
             col: self.col - raw_len,
-        };
+        }
     }
 }
 
@@ -273,8 +272,7 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input = 
-"#include <stdio.h>
+        let input = "#include <stdio.h>
 int five = 5;
 
 int add(int x, int y) {
@@ -536,11 +534,9 @@ a || b;
                 i, tok.raw_string
             );
             assert_eq!(tok.raw_string, t.1);
-            assert_eq!(tok.row, t.2,
-                "index={}, actual_row='{}'",
-                i, tok.row
-            );
-            assert_eq!(tok.col, t.3,
+            assert_eq!(tok.row, t.2, "index={}, actual_row='{}'", i, tok.row);
+            assert_eq!(
+                tok.col, t.3,
                 "index={}, actual_literal='{}', actual_col='{}'",
                 i, tok.raw_string, tok.col
             );

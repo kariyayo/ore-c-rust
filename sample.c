@@ -1,5 +1,9 @@
-
+struct person {
+    char *name;
+    int age;
+};
 int main() {
-    int s = 1 + 2;
+    struct person a;
+    a->age = 10;
     return 0;
 }
