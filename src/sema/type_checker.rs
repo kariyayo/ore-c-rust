@@ -238,60 +238,30 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
     let (stmt, loc) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
-            if let Some(exp) = expression {
-                if let Err(e) = check_expression(env, exp) {
-                    results.push(e);
-                }
+            if let Err(e) = check_return_statement(env, expression) {
+                results.push(e);
             }
         }
         Statement::Break => todo!(),
         Statement::Continue => todo!(),
         Statement::VarDecl(items) => {
-            for (type_ref, decl) in items {
-                if let Err(e) = check_declarator(env, type_ref, decl) {
-                    results.push(e);
-                } else {
-                    env.put_vardecl(&decl.name, type_ref.clone());
-                }
-            }
+            results.append(&mut check_var_decl_statement(env, items));
         }
         Statement::Block(statements) => {
-            let local_scope = LocalScope {
-                parent: Some(&env.scope),
-                entities: HashMap::new(),
-            };
-            let mut new_env = Env {
-                type_table: env.type_table,
-                functions: env.functions,
-                scope: local_scope,
-            };
-            statements.iter().for_each(|stmt| {
-                let mut errors = check_statement(&mut new_env, stmt);
-                results.append(&mut errors);
-            })
+            results.append(&mut check_block_statement(env, statements));
         }
         Statement::If {
             condition,
             consequence,
             alternative,
-        } => match check_expression(env, condition) {
-            Ok(condition_type) => {
-                if condition_type.type_name() != "int" {
-                    results.push(Error::new(
-                        &condition.1,
-                        format!(
-                            "type error. condition type is {}",
-                            condition_type.type_name()
-                        ),
-                    ));
-                }
-                results.extend(check_statement(env, consequence));
-                if let Some(alt_stmt) = alternative {
-                    results.extend(check_statement(env, alt_stmt));
-                }
-            }
-            Err(e) => results.push(e),
-        },
+        } => {
+            results.append(&mut check_if_statement(
+                env,
+                condition,
+                consequence,
+                alternative,
+            ));
+        }
         Statement::Switch {
             condition,
             switch_block,
@@ -311,6 +281,71 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         }
     }
     results
+}
+
+fn check_return_statement(env: &mut Env, expression: &Option<(Expression, Loc)>) -> Result<TypeRef> {
+    if let Some(exp) = expression {
+        check_expression(env, exp)
+    } else {
+        Ok(TypeRef::Named("void".to_string()))
+    }
+}
+
+fn check_var_decl_statement(env: &mut Env, items: &Vec<(TypeRef, Declarator)>) -> Vec<Error> {
+    let mut errors: Vec<Error> = vec![];
+    for (type_ref, decl) in items {
+        if let Err(e) = check_declarator(env, type_ref, decl) {
+            errors.push(e);
+        } else {
+            env.put_vardecl(&decl.name, type_ref.clone());
+        }
+    }
+    errors
+}
+
+fn check_block_statement(env: &mut Env, statements: &[StatementNode]) -> Vec<Error> {
+    let mut errors: Vec<Error> = vec![];
+    let local_scope = LocalScope {
+        parent: Some(&env.scope),
+        entities: HashMap::new(),
+    };
+    let mut new_env = Env {
+        type_table: env.type_table,
+        functions: env.functions,
+        scope: local_scope,
+    };
+    for stmt in statements {
+        errors.append(&mut check_statement(&mut new_env, stmt));
+    }
+    errors
+}
+
+fn check_if_statement(
+    env: &mut Env,
+    condition: &(Expression, Loc),
+    consequence: &(Statement, Loc),
+    alternative: &Option<Box<(Statement, Loc)>>,
+) -> Vec<Error> {
+    let mut errors: Vec<Error> = vec![];
+    match check_expression(env, condition) {
+        Ok(condition_type) => {
+            if condition_type.type_name() != "int" {
+                errors.push(Error::new(
+                    &condition.1,
+                    format!(
+                        "type error. condition type is {}",
+                        condition_type.type_name()
+                    ),
+                ));
+            }
+            errors.extend(check_statement(env, consequence));
+            if let Some(alt_stmt) = alternative {
+                errors.extend(check_statement(env, alt_stmt));
+            }
+        }
+        Err(e) => errors.push(e),
+    };
+    errors
 }
 
 fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
@@ -519,6 +554,7 @@ fn check_function_declaration(
     }
 
     if let Some(stmt) = body {
+        // TODO: check `return_type_dec`
         results.extend(check_statement(&mut new_env, stmt));
     }
     if results.is_empty() {
@@ -826,9 +862,12 @@ int inc(int a) {
         let input = "
 int main() {
     if ('a') {
-        int y = 1 + 'a';
+        int y1 = 1 + 2;
     } else {
-        int y = 1;
+        int y2 = y1;
+        int y3 = 1 + 'a';
+        int y4 = 1 + 2;
+        char yy = y4 + 2;
     }
 }
 ";
@@ -840,7 +879,7 @@ int main() {
 
         // then
         if let Some(Error { errors }) = result.err() {
-            assert_eq!(errors.len(), 2);
+            assert_eq!(errors.len(), 4);
             assert_eq!(
                 true,
                 errors[0].starts_with("error:3:9: type error. condition type is"),
@@ -849,9 +888,21 @@ int main() {
             );
             assert_eq!(
                 true,
-                errors[1].starts_with("error:4:21: type error. right should be `int`, but is"),
+                errors[1].starts_with("error:6:18: variable `y1` is not defined"),
                 "actual message: `{}`",
                 errors[1]
+            );
+            assert_eq!(
+                true,
+                errors[2].starts_with("error:7:22: type error. right should be `int`, but is char"),
+                "actual message: `{}`",
+                errors[2]
+            );
+            assert_eq!(
+                true,
+                errors[3].starts_with("error:9:22: type error. initialize variable type is char, value type is int"),
+                "actual message: `{}`",
+                errors[3]
             );
         } else {
             assert!(false);
