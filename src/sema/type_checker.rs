@@ -5,7 +5,7 @@ use std::{
 
 use crate::parser::ast::{
     Declarator, Expression, ExpressionNode, ExternalItem, Function, Loc, Parameter, Program,
-    Statement, StatementNode, TypeRef,
+    Statement, StatementNode, SwitchBlock, SwitchLabel, TypeRef,
 };
 
 #[derive(Debug)]
@@ -265,7 +265,9 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         Statement::Switch {
             condition,
             switch_block,
-        } => todo!(),
+        } => {
+            results.append(&mut check_switch_statement(env, condition, switch_block));
+        }
         Statement::While { condition, body } => todo!(),
         Statement::DoWhile { body, condition } => todo!(),
         Statement::For {
@@ -283,7 +285,10 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
     results
 }
 
-fn check_return_statement(env: &mut Env, expression: &Option<(Expression, Loc)>) -> Result<TypeRef> {
+fn check_return_statement(
+    env: &mut Env,
+    expression: &Option<(Expression, Loc)>,
+) -> Result<TypeRef> {
     if let Some(exp) = expression {
         check_expression(env, exp)
     } else {
@@ -345,6 +350,59 @@ fn check_if_statement(
         }
         Err(e) => errors.push(e),
     };
+    errors
+}
+
+fn check_switch_statement(
+    env: &mut Env,
+    condition: &(Expression, Loc),
+    switch_block: &SwitchBlock,
+) -> Vec<Error> {
+    let mut errors: Vec<Error> = vec![];
+    match check_expression(env, condition) {
+        Ok(condition_type) => {
+            match condition_type.type_name().as_str() {
+                "int" | "char" | "short" | "long" => {
+                    // NOP
+                }
+                _ => {
+                    errors.push(Error::new(
+                        &condition.1,
+                        format!(
+                            "type error. switch condition type is {}",
+                            condition_type.type_name()
+                        ),
+                    ));
+                    return errors;
+                }
+            }
+            // condition_typeと全てのラベルの型が同じであることをチェック
+            switch_block.label_entries.iter().flat_map(|entry| &entry.labels).for_each(|label| {
+                if let SwitchLabel::Case(label_exp) = label {
+                    match check_expression(env, label_exp) {
+                        Ok(label_ty) => {
+                            if label_ty != condition_type {
+                                errors.push(Error::new(
+                                    &label_exp.1,
+                                    format!(
+                                        "type error. switch label type is {}, but switch condition type is {}",
+                                        label_ty.type_name(),
+                                        condition_type.type_name(),
+                                    ),
+                                ));
+                            }
+                        },
+                        Err(e) => errors.push(e),
+                    }
+                }
+            });
+            // bodyをチェック
+            for stmt in &switch_block.body {
+                errors.extend(check_statement(env, stmt));
+            }
+        }
+        Err(e) => errors.push(e),
+    }
     errors
 }
 
@@ -900,9 +958,114 @@ int main() {
             );
             assert_eq!(
                 true,
-                errors[3].starts_with("error:9:22: type error. initialize variable type is char, value type is int"),
+                errors[3].starts_with(
+                    "error:9:22: type error. initialize variable type is char, value type is int"
+                ),
                 "actual message: `{}`",
                 errors[3]
+            );
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_type_no_error_at_switch() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+int main() {
+  char* ans;
+  switch (take_value()) {
+    case 1:
+      ans = "One\n";
+    case 2:
+      ans = "Two\n";
+    case 3:
+    default:
+      ans = "Default\n";
+  }
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { errors: _ }) = result.err() {
+            assert!(false);
+        } else {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_type_error_at_switch() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+struct person {
+    int age;
+    char* name;
+};
+
+int main() {
+  char* ans;
+  switch (take_value()) {
+    case 'a':
+      ans = "One\n";
+    case 2:
+      ans = 2222;
+    case 3:
+    default:
+      ans = "Default\n";
+  }
+
+  struct person p = { 30, "Dave" };
+  switch (p) {
+    default:
+      ans = "Default\n";
+  }
+
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { errors }) = result.err() {
+            assert_eq!(errors.len(), 3);
+            assert_eq!(
+                true,
+                errors[0].starts_with("error:14:10: type error. switch label type is char, but switch condition type is int"),
+                "actual message: `{}`",
+                errors[0]
+            );
+            assert_eq!(
+                true,
+                errors[1].starts_with("error:17:7: type mismatched for operator `=`. left type is char*, right type is int"),
+                "actual message: `{}`",
+                errors[1]
+            );
+            assert_eq!(
+                true,
+                errors[2]
+                    .starts_with("error:24:11: type error. switch condition type is struct person"),
+                "actual message: `{}`",
+                errors[2]
             );
         } else {
             assert!(false);
