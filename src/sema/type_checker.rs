@@ -242,8 +242,9 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
                 results.push(e);
             }
         }
-        Statement::Break => todo!(),
-        Statement::Continue => todo!(),
+        Statement::Break | Statement::Continue => {
+            // NOP
+        },
         Statement::VarDecl(items) => {
             results.append(&mut check_var_decl_statement(env, items));
         }
@@ -268,7 +269,9 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         } => {
             results.append(&mut check_switch_statement(env, condition, switch_block));
         }
-        Statement::While { condition, body } => todo!(),
+        Statement::While { condition, body } => {
+            results.append(&mut check_while_statement(env, condition, body));
+        },
         Statement::DoWhile { body, condition } => todo!(),
         Statement::For {
             init,
@@ -403,6 +406,30 @@ fn check_switch_statement(
         }
         Err(e) => errors.push(e),
     }
+    errors
+}
+
+fn check_while_statement(
+    env: &mut Env,
+    condition: &(Expression, Loc),
+    body: &(Statement, Loc),
+) -> Vec<Error> {
+    let mut errors: Vec<Error> = vec![];
+    match check_expression(env, condition) {
+        Ok(condition_type) => {
+            if condition_type.type_name().as_str() != "int" {
+                errors.push(Error::new(
+                    &condition.1,
+                    format!(
+                        "type error. while condition type is {}",
+                        condition_type.type_name()
+                    ),
+                ));
+            }
+        }
+        Err(e) => errors.push(e),
+    }
+    errors.extend(check_statement(env, body));
     errors
 }
 
@@ -982,6 +1009,7 @@ int main() {
   switch (take_value()) {
     case 1:
       ans = "One\n";
+      break;
     case 2:
       ans = "Two\n";
     case 3:
@@ -1066,6 +1094,93 @@ int main() {
                     .starts_with("error:24:11: type error. switch condition type is struct person"),
                 "actual message: `{}`",
                 errors[2]
+            );
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_type_no_error_at_while() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+int MAX = 10;
+
+int main() {
+  char* ans;
+  while (take_value() <= MAX) {
+    if (take_value() == 1) {
+      ans = "One\n";
+    } else if (take_value() == 2) {
+      ans = "Two\n";
+      continue;
+    } else {
+      break;
+    }
+  }
+  while (0)
+    break;
+  while (take_value()) {}
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { .. }) = result.err() {
+            assert!(false);
+        } else {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_type_error_at_while() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+int MAX = 10;
+
+int main() {
+  char* ans;
+  while ("aaaa") {
+    if (take_value() == 1) {
+      ans = "One\n";
+    } else if (take_value() == 2) {
+      ans = "Two\n";
+      continue;
+    } else {
+      break;
+    }
+  }
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                true,
+                errors[0].starts_with("error:10:10: type error. while condition type is char*"),
+                "actual message: `{}`",
+                errors[0]
             );
         } else {
             assert!(false);
