@@ -272,7 +272,9 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         Statement::While { condition, body } => {
             results.append(&mut check_while_statement(env, condition, body));
         },
-        Statement::DoWhile { body, condition } => todo!(),
+        Statement::DoWhile { body, condition } => {
+            results.append(&mut check_while_statement(env, condition, body));
+        },
         Statement::For {
             init,
             condition,
@@ -1340,6 +1342,95 @@ int main() {
                 errors[1].starts_with("error:9:26: type mismatched for postfix operator `--`. left type is char*"),
                 "actual message: `{}`",
                 errors[1]
+            );
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_type_no_error_at_dowhile() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+int MAX = 10;
+
+int main() {
+  char* ans;
+  do {
+    if (take_value() == 1) {
+      ans = "One\n";
+    } else if (take_value() == 2) {
+      ans = "Two\n";
+      continue;
+    } else {
+      break;
+    }
+  } while (take_value() <= MAX);
+  do {
+    break;
+  } while (0);
+  do {
+  } while (take_value());
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { .. }) = result.err() {
+            assert!(false);
+        } else {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_type_error_at_dowhile() {
+        // given
+        let input = r#"
+int take_value() {
+  return 2;
+}
+
+int MAX = 10;
+
+int main() {
+  char* ans;
+  do {
+    if (take_value() == 1) {
+      ans = "One\n";
+    } else if (take_value() == 2) {
+      ans = "Two\n";
+      continue;
+    } else {
+      break;
+    }
+  } while ("aaaa");
+  return 0;
+}
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(Error { errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                true,
+                errors[0].starts_with("error:19:12: type error. while condition type is char*"),
+                "actual message: `{}`",
+                errors[0]
             );
         } else {
             assert!(false);
