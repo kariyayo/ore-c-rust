@@ -235,7 +235,7 @@ pub fn check_type(ast: &Program) -> Result<()> {
 
 fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
     let mut results: Vec<Error> = vec![];
-    let (stmt, loc) = stmt_node;
+    let (stmt, _) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
             if let Err(e) = check_return_statement(env, expression) {
@@ -244,7 +244,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         }
         Statement::Break | Statement::Continue => {
             // NOP
-        },
+        }
         Statement::VarDecl(items) => {
             results.append(&mut check_var_decl_statement(env, items));
         }
@@ -271,10 +271,10 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
         }
         Statement::While { condition, body } => {
             results.append(&mut check_while_statement(env, condition, body));
-        },
+        }
         Statement::DoWhile { body, condition } => {
             results.append(&mut check_while_statement(env, condition, body));
-        },
+        }
         Statement::For {
             init,
             condition,
@@ -282,7 +282,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<Error> {
             body,
         } => {
             results.append(&mut check_for_statement(env, init, condition, post, body));
-        },
+        }
         Statement::ExpressionStatement(expression) => {
             if let Err(e) = check_expression(env, expression) {
                 results.push(e);
@@ -448,8 +448,8 @@ fn check_for_statement(
     if let Some(Err(e)) = init.as_ref().map(|exp| check_expression(env, exp)) {
         errors.push(e);
     }
-    condition.as_ref().map(|exp| {
-        match check_expression(env, &exp) {
+    if let Some(exp) = condition.as_ref() {
+        match check_expression(env, exp) {
             Ok(condition_type) => {
                 if condition_type.type_name().as_str() != "int" {
                     errors.push(Error::new(
@@ -460,10 +460,10 @@ fn check_for_statement(
                         ),
                     ));
                 }
-            },
+            }
             Err(e) => errors.push(e),
         }
-    });
+    }
     if let Some(Err(e)) = post.as_ref().map(|exp| check_expression(env, exp)) {
         errors.push(e);
     }
@@ -497,7 +497,8 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                         &right.1,
                         format!(
                             "type mismatched for prefix operator `{}`. right type is {}",
-                            operator, right_type.type_name()
+                            operator,
+                            right_type.type_name()
                         ),
                     ))
                 } else {
@@ -569,29 +570,26 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 }
             }
         }
-        Expression::Postfix { operator, left } => {
-            match operator.as_str() {
-                "++" | "--" => {
-                    let left_type = check_expression(env, left)?;
-                    if left_type.type_name() != "int" {
-                        Err(Error::new(
-                            &left.1,
-                            format!(
-                                "type mismatched for postfix operator `{}`. left type is {}",
-                                operator, left_type.type_name()
-                            ),
-                        ))
-                    } else {
-                        Ok(left_type)
-                    }
-                }
-                _ => {
+        Expression::Postfix { operator, left } => match operator.as_str() {
+            "++" | "--" => {
+                let left_type = check_expression(env, left)?;
+                if left_type.type_name() != "int" {
                     Err(Error::new(
-                        &left.as_ref().1,
-                        format!( "type mismatched for postfix operator `{}`", operator),
+                        &left.1,
+                        format!(
+                            "type mismatched for postfix operator `{}`. left type is {}",
+                            operator,
+                            left_type.type_name()
+                        ),
                     ))
+                } else {
+                    Ok(left_type)
                 }
             }
+            _ => Err(Error::new(
+                &left.as_ref().1,
+                format!("type mismatched for postfix operator `{}`", operator),
+            )),
         },
         Expression::FunctionCall {
             function_name,
@@ -644,7 +642,6 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                 Err(Error { errors })
             }
         }
-        Expression::Initializer { elements } => todo!(),
         Expression::Index { left, index } => {
             // as[x]の `x` の型がintであることをチェック
             let index_type = check_expression(env, index)?;
@@ -670,6 +667,9 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<TypeRef> {
                     ),
                 )),
             }
+        }
+        Expression::Initializer { .. } => {
+            panic!("Expression::Initializer is unexpected.")
         }
     }
 }
@@ -1339,7 +1339,9 @@ int main() {
             );
             assert_eq!(
                 true,
-                errors[1].starts_with("error:9:26: type mismatched for postfix operator `--`. left type is char*"),
+                errors[1].starts_with(
+                    "error:9:26: type mismatched for postfix operator `--`. left type is char*"
+                ),
                 "actual message: `{}`",
                 errors[1]
             );
