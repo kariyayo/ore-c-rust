@@ -7,19 +7,19 @@ use crate::parser::ast::{
 };
 
 #[derive(Debug)]
-pub struct Error {
+pub struct ScopeError {
     errors: Vec<String>,
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for ScopeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
 }
 
-impl core::error::Error for Error {}
+impl core::error::Error for ScopeError {}
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, ScopeError>;
 
 #[derive(Debug)]
 struct Types {
@@ -106,7 +106,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         types, functions, &global_scope
     );
 
-    let results: Vec<Error> = ast
+    let results: Vec<ScopeError> = ast
         .external_item_nodes
         .iter()
         .filter_map(|(item, _)| {
@@ -135,7 +135,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
     if results.is_empty() {
         return Ok(());
     }
-    Err(Error {
+    Err(ScopeError {
         errors: results.iter().flat_map(|e| e.errors.clone()).collect(),
     })
 }
@@ -148,8 +148,8 @@ fn check_function(
     name: &str,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
-) -> Vec<Error> {
-    let mut results: Vec<Error> = vec![];
+) -> Vec<ScopeError> {
+    let mut results: Vec<ScopeError> = vec![];
     println!(
         "@@@@ check_function ::: return_type_dec: {:?}, name: {:?}, parameters: {:?}",
         return_type_dec.type_name(),
@@ -171,7 +171,7 @@ fn check_function(
     };
     for p in parameters {
         if local_scope.find(name) {
-            return vec![Error {
+            return vec![ScopeError {
                 errors: vec![format!("parameter `{}` is duplicated", name)],
             }];
         }
@@ -180,7 +180,7 @@ fn check_function(
 
     // check function body
     if let Some(stmt) = body {
-        let mut es: Vec<Error> = check_statement(functions, &mut local_scope, stmt)
+        let mut es: Vec<ScopeError> = check_statement(functions, &mut local_scope, stmt)
             .into_iter()
             .filter_map(|a| a.err())
             .collect();
@@ -215,7 +215,7 @@ fn check_statement(
             let mut results: Vec<Result<()>> = vec![];
             for (_, decl) in items {
                 if scope.find(decl.name.as_str()) {
-                    results.push(Err(Error {
+                    results.push(Err(ScopeError {
                         errors: vec![format!("variable `{}` is duplicated", decl.name)],
                     }));
                 } else {
@@ -314,7 +314,7 @@ fn check_expression(
         Expression::StringLiteral(_) => Ok(()),
         Expression::Identifier(name) => {
             if !scope.find(name) {
-                Err(Error {
+                Err(ScopeError {
                     errors: vec![format!("variable `{}` is not defined", name)],
                 })
             } else {
@@ -342,7 +342,7 @@ fn check_expression(
             arguments,
         } => {
             if !functions.find(function_name) {
-                return Err(Error {
+                return Err(ScopeError {
                     errors: vec![format!("function `{}` is not defined", function_name)],
                 });
             }
@@ -404,7 +404,7 @@ struct rect foo(point p) {
         let result = check_scope(&ast);
 
         // then
-        if let Some(Error { errors }) = result.err() {
+        if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
             assert_eq!(
                 true,
@@ -461,7 +461,7 @@ struct point foo(point p) {
         let result = check_scope(&ast);
 
         // then
-        if let Some(Error { errors }) = result.err() {
+        if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 15);
             assert_eq!(
                 true,
@@ -578,7 +578,7 @@ struct point foo(point p) {
         let result = check_scope(&ast);
 
         // then
-        if let Some(Error { errors }) = result.err() {
+        if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
             assert_eq!(
                 true,
