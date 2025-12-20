@@ -7,6 +7,7 @@ use self::ast::{Declarator, TypeRef};
 use self::parser_for_expressions::ExpressionPrecedence;
 use crate::lexer::token::{Token, TokenType};
 use crate::lexer::Lexer;
+use crate::parser::ast::StructRef;
 
 #[derive(Debug)]
 struct Error {
@@ -95,7 +96,7 @@ impl Parser {
         );
     }
 
-    fn parse_struct_type(&mut self) -> Result<ast::TypeRef> {
+    fn parse_struct_type(&mut self) -> Result<(ast::TagName, Vec<ast::StructMember>)> {
         if self.cur_token.token_type != TokenType::Struct {
             return Err(self.error(format!(
                 "[parse_struct] expected current token to be Struct, got {:?}",
@@ -104,16 +105,16 @@ impl Parser {
         }
         self.next_token();
 
-        let mut tag_name: Option<String> = None;
+        let mut tag_name: ast::TagName = None;
         if self.cur_token.token_type != TokenType::Lbrace {
             tag_name = Some(self.cur_token.literal());
             self.next_token();
         }
 
-        let mut members: Vec<ast::StructDecl> = vec![];
+        let mut members: Vec<ast::StructMember> = vec![];
         if self.cur_token.token_type == TokenType::Lbrace {
             // int x; int y; ...
-            members = self.parse_struct_decls()?;
+            members = self.parse_struct_members()?;
             if self.cur_token.token_type != TokenType::Rbrace {
                 return Err(self.error(format!(
                     "[parse_struct] expected current token to be Rbrace, got {:?}",
@@ -123,11 +124,11 @@ impl Parser {
             self.next_token();
         }
 
-        Ok(ast::TypeRef::Struct { tag_name, members })
+        Ok((tag_name, members))
     }
 
-    fn parse_struct_decls(&mut self) -> Result<Vec<ast::StructDecl>> {
-        let mut decls: Vec<ast::StructDecl> = vec![];
+    fn parse_struct_members(&mut self) -> Result<Vec<ast::StructMember>> {
+        let mut decls: Vec<ast::StructMember> = vec![];
         if self.cur_token.token_type != TokenType::Lbrace {
             return Err(self.error(format!(
                 "[parse_struct_decls] expected next token to be Lbrace, got {:?}",
@@ -138,10 +139,10 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Rbrace {
             return Ok(decls);
         }
-        decls = self.parse_type_decls(
+        decls = self.parse_type_refs(
             TokenType::Semicolon,
             TokenType::Rbrace,
-            ast::StructDecl::new,
+            ast::StructMember::new,
         )?;
         if self.cur_token.token_type != TokenType::Rbrace {
             return Err(self.error(format!(
@@ -152,7 +153,7 @@ impl Parser {
         Ok(decls)
     }
 
-    fn parse_type_decls<F, T>(
+    fn parse_type_refs<F, T>(
         &mut self,
         separator: TokenType,
         end_token: TokenType,
@@ -164,8 +165,21 @@ impl Parser {
         let mut result: Vec<T> = vec![];
         loop {
             // struct?
-            let mut type_dec = if self.cur_token.token_type == TokenType::Struct {
-                self.parse_struct_type()?
+            let mut type_ref = if self.cur_token.token_type == TokenType::Struct {
+                let (tag_name_opt, members) = self.parse_struct_type()?;
+                if !members.is_empty() {
+                    let error_msg =
+                        "[parse_vardecl_statement] not supported struct decl in function"
+                            .to_string();
+                    return Err(self.error(error_msg));
+                }
+                let Some(tag) = tag_name_opt else {
+                    let error_msg =
+                        "[parse_vardecl_statement] not supported struct decl in function"
+                            .to_string();
+                    return Err(self.error(error_msg));
+                };
+                TypeRef::Struct(StructRef::TagName(tag))
             } else {
                 let t = ast::TypeRef::Named(self.cur_token.literal());
                 self.next_token();
@@ -174,7 +188,7 @@ impl Parser {
 
             // pointer?
             while self.cur_token.token_type == TokenType::Asterisk {
-                type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
+                type_ref = ast::TypeRef::Pointer(Box::new(type_ref));
                 self.next_token();
             }
 
@@ -196,13 +210,13 @@ impl Parser {
                         self.cur_token.token_type
                     )));
                 }
-                type_dec = TypeRef::Array {
-                    type_dec: Box::new(type_dec),
+                type_ref = TypeRef::Array {
+                    type_ref: Box::new(type_ref),
                     size: None,
                 };
             }
 
-            result.push(f((type_dec, name)));
+            result.push(f((type_ref, name)));
 
             self.next_token();
             if self.cur_token.token_type != separator {
@@ -217,24 +231,22 @@ impl Parser {
         Ok(result)
     }
 
-    fn parse_declarators(&mut self, base_type_dec: &TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
-        let base_type_name = match base_type_dec {
-            TypeRef::Named(name) => name.to_string(),
-            TypeRef::Struct {
-                tag_name: _,
-                members: _,
-            } => base_type_dec.type_name(),
-            _ => {
-                return Err(self.error(format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_dec)));
-            }
-        };
+    fn parse_declarators(&mut self, base_type_ref: &TypeRef) -> Result<Vec<(TypeRef, Declarator)>> {
+        // let base_type_name = match base_type_ref {
+        //     TypeRef::Named(name) => name.to_string(),
+        //     TypeRef::Struct(_) => base_type_ref.type_name(),
+        //     _ => {
+        //         return Err(self.error(format!("[parse_declarators] expected `base_type_dec` should be TypeRef::Named, got {:?}", base_type_ref)));
+        //     }
+        // };
         let mut result: Vec<(TypeRef, Declarator)> = vec![];
         loop {
-            let mut type_dec = TypeRef::Named(base_type_name.clone());
+            let mut type_ref = base_type_ref.clone();
+            // let mut type_ref = TypeRef::Named(base_type_name.clone());
 
             // pointer?
             while self.cur_token.token_type == TokenType::Asterisk {
-                type_dec = ast::TypeRef::Pointer(Box::new(type_dec));
+                type_ref = ast::TypeRef::Pointer(Box::new(type_ref));
                 self.next_token();
             }
 
@@ -252,8 +264,8 @@ impl Parser {
                 self.next_token();
                 if self.cur_token.token_type == TokenType::Rbracket {
                     // <type_ref> <ident>[] = {<expression>, <expression>, ...};
-                    type_dec = TypeRef::Array {
-                        type_dec: Box::new(type_dec),
+                    type_ref = TypeRef::Array {
+                        type_ref: Box::new(type_ref),
                         size: None,
                     };
                 } else {
@@ -270,8 +282,8 @@ impl Parser {
                             self.cur_token.literal()
                         )],
                     })?;
-                    type_dec = TypeRef::Array {
-                        type_dec: Box::new(type_dec),
+                    type_ref = TypeRef::Array {
+                        type_ref: Box::new(type_ref),
                         size: Some(size),
                     };
                     self.next_token();
@@ -287,9 +299,9 @@ impl Parser {
             let declarator = if self.peek_token.token_type != TokenType::Assign {
                 // 値の指定がない、かつ、サイズが指定されていない配列型の場合はエラー
                 if let TypeRef::Array {
-                    type_dec: _,
+                    type_ref: _,
                     size: None,
-                } = type_dec
+                } = type_ref
                 {
                     return Err(self.error(format!(
                         "[parse_declarators] expected next token to be Assign, got {:?}",
@@ -307,7 +319,7 @@ impl Parser {
                 }
             };
 
-            result.push((type_dec, declarator));
+            result.push((type_ref, declarator));
             self.next_token();
             if self.cur_token.token_type != TokenType::Comma {
                 break;

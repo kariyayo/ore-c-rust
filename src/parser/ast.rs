@@ -8,14 +8,17 @@ pub enum TypeRef {
     Pointer(Box<TypeRef>),
     // 配列型（例: int[10]）
     Array {
-        type_dec: Box<TypeRef>,
+        type_ref: Box<TypeRef>,
         size: Option<u32>,
     },
     // 構造体
-    Struct {
-        tag_name: Option<String>,
-        members: Vec<StructDecl>,
-    },
+    Struct(StructRef),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum StructRef {
+    TagName(String),
+    Decl(StructDecl),
 }
 
 impl TypeRef {
@@ -23,58 +26,70 @@ impl TypeRef {
         match self {
             TypeRef::Named(name) => name.clone(),
             TypeRef::Pointer(type_ref) => type_ref.type_name() + "*",
-            TypeRef::Array {
-                type_dec: type_ref,
-                size,
-            } => format!(
+            TypeRef::Array { type_ref, size } => format!(
                 "{}[{}]",
                 type_ref.type_name(),
                 size.map_or("".to_string(), |x| x.to_string())
             ),
-            TypeRef::Struct { tag_name, members } => {
-                if members.is_empty() {
-                    format!(
-                        "struct {}",
-                        tag_name.as_ref().map_or("".to_string(), |x| x.to_string())
-                    )
-                } else if tag_name.is_some() {
-                    format!("struct {}", tag_name.as_ref().unwrap())
-                } else {
-                    let members_string = members
-                        .iter()
-                        .map(|StructDecl { type_dec, name }| type_dec.type_name() + " " + name)
-                        .fold("\n".to_string(), |acc, x| acc + &format!("    {};\n", x));
-                    format!("struct {{{}}}", members_string)
+            TypeRef::Struct(struct_ref) => match struct_ref {
+                StructRef::TagName(tag_name) => {
+                    format!("struct {}", tag_name)
                 }
-            }
+                StructRef::Decl(StructDecl { tag_name, members }) => {
+                    if members.is_empty() {
+                        format!(
+                            "struct {}",
+                            tag_name.as_ref().map_or("".to_string(), |x| x.to_string())
+                        )
+                    } else if tag_name.is_some() {
+                        format!("struct {}", tag_name.as_ref().unwrap())
+                    } else {
+                        let members_string = members
+                            .iter()
+                            .map(|StructMember { type_ref, name }| {
+                                type_ref.type_name() + " " + name
+                            })
+                            .fold("\n".to_string(), |acc, x| acc + &format!("    {};\n", x));
+                        format!("struct {{{}}}", members_string)
+                    }
+                }
+            },
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct StructDecl {
-    pub type_dec: TypeRef,
+    pub tag_name: TagName,
+    pub members: Vec<StructMember>,
+}
+
+pub type TagName = Option<String>;
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct StructMember {
+    pub type_ref: TypeRef,
     pub name: String,
 }
 
-impl StructDecl {
-    pub fn new(p: (TypeRef, String)) -> StructDecl {
-        StructDecl {
-            type_dec: p.0,
+impl StructMember {
+    pub fn new(p: (TypeRef, String)) -> StructMember {
+        StructMember {
+            type_ref: p.0,
             name: p.1,
         }
     }
 }
 
-impl fmt::Display for StructDecl {
+impl fmt::Display for StructMember {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.type_dec.type_name(), self.name)
+        write!(f, "{} {}", self.type_ref.type_name(), self.name)
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Function {
-    pub return_type_dec: TypeRef,
+pub struct FunctionDecl {
+    pub return_type_ref: TypeRef,
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub body: Option<Box<StatementNode>>,
@@ -82,14 +97,14 @@ pub struct Function {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Parameter {
-    pub type_dec: TypeRef,
+    pub type_ref: TypeRef,
     pub name: String,
 }
 
 impl Parameter {
     pub fn new(p: (TypeRef, String)) -> Parameter {
         Parameter {
-            type_dec: p.0,
+            type_ref: p.0,
             name: p.1,
         }
     }
@@ -111,10 +126,11 @@ pub struct Loc {
 pub type ExternalItemNode = (ExternalItem, Loc);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum ExternalItem {
-    FunctionDecl(Function),
-    Struct(TypeRef),
-    VarDecl(Vec<(TypeRef, Declarator)>),
+    FunctionDeclNode(FunctionDecl),
+    StructDeclNode(StructDecl),
+    VarDeclNode(Vec<(TypeRef, Declarator)>),
 }
 
 /// 文を表すノード

@@ -1,20 +1,48 @@
-use super::ast::{ExternalItem, ExternalItemNode, Function, Parameter, TypeRef};
+use crate::parser::ast::StructRef;
+
+use super::ast::{ExternalItem, ExternalItemNode, FunctionDecl, Parameter, StructDecl, TypeRef};
 use super::{Parser, Result, TokenType};
 
 impl Parser {
     pub(super) fn parse_external_item(&mut self) -> Result<ExternalItemNode> {
-        let mut struct_type_dec: Option<TypeRef> = None;
+        let mut struct_decl_node: Option<ExternalItemNode> = None;
+        let mut struct_type_ref: Option<TypeRef> = None;
+
         if self.cur_token.token_type == TokenType::Struct {
-            let struct_type = self.parse_struct_type()?;
+            let (tag_name, members) = self.parse_struct_type()?;
+
+            // セミコロンだったらstruct定義のみの文
             if self.cur_token.token_type == TokenType::Semicolon {
-                return Ok((ExternalItem::Struct(struct_type), self.cur_token.loc()));
-            }
-            struct_type_dec = if self.cur_token.token_type == TokenType::Asterisk {
-                self.next_token();
-                Some(TypeRef::Pointer(Box::new(struct_type)))
+                struct_decl_node = Some((
+                    ExternalItem::StructDeclNode(StructDecl { tag_name, members }),
+                    self.cur_token.loc(),
+                ));
             } else {
-                Some(struct_type)
-            };
+                let type_ref = if !members.is_empty() {
+                    let struct_decl = StructDecl {
+                        tag_name: tag_name.clone(),
+                        members,
+                    };
+                    Some(TypeRef::Struct(StructRef::Decl(struct_decl)))
+                } else if tag_name.is_some() {
+                    Some(TypeRef::Struct(StructRef::TagName(tag_name.unwrap())))
+                } else {
+                    None
+                };
+                if let Some(ty) = type_ref {
+                    if self.cur_token.token_type == TokenType::Asterisk {
+                        self.next_token();
+                        struct_type_ref = Some(TypeRef::Pointer(Box::new(ty)))
+                    } else {
+                        struct_type_ref = Some(ty)
+                    }
+                }
+            }
+        }
+
+        // struct定義のみならreturnする
+        if let Some(decl_node) = struct_decl_node {
+            return Ok(decl_node);
         }
 
         match self.cur_token.token_type {
@@ -24,7 +52,7 @@ impl Parser {
             | TokenType::Short
             | TokenType::Long
             | TokenType::Ident => {
-                let type_dec = struct_type_dec.unwrap_or_else(|| {
+                let type_ref = struct_type_ref.unwrap_or_else(|| {
                     // 関数宣言で、返り値の型を省略している場合を考慮する
                     if self.peek_token.token_type == TokenType::Lparem {
                         // 省略されている場合は、int型とする
@@ -35,13 +63,12 @@ impl Parser {
                         tmp
                     }
                 });
-
                 if self.peek_token.token_type == TokenType::Lparem {
                     // 関数
-                    self.parse_external_function(type_dec)
+                    self.parse_external_function(type_ref)
                 } else {
                     // 変数
-                    self.parse_external_vardecl(type_dec)
+                    self.parse_external_vardecl(type_ref)
                 }
             }
             _ => Err(self.error(format!(
@@ -60,10 +87,10 @@ impl Parser {
                 self.peek_token.token_type
             )));
         }
-        Ok((ExternalItem::VarDecl(declarators), loc))
+        Ok((ExternalItem::VarDeclNode(declarators), loc))
     }
 
-    fn parse_external_function(&mut self, return_type_dec: TypeRef) -> Result<ExternalItemNode> {
+    fn parse_external_function(&mut self, return_type_ref: TypeRef) -> Result<ExternalItemNode> {
         let loc = self.cur_token.loc();
         if self.cur_token.token_type != TokenType::Ident {
             return Err(self.error(format!(
@@ -85,8 +112,8 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Lbrace {
             let body = self.parse_block_statement()?;
             Ok((
-                ExternalItem::FunctionDecl(Function {
-                    return_type_dec,
+                ExternalItem::FunctionDeclNode(FunctionDecl {
+                    return_type_ref,
                     name,
                     parameters,
                     body: Some(Box::new(body)),
@@ -95,8 +122,8 @@ impl Parser {
             ))
         } else {
             Ok((
-                ExternalItem::FunctionDecl(Function {
-                    return_type_dec,
+                ExternalItem::FunctionDeclNode(FunctionDecl {
+                    return_type_ref,
                     name,
                     parameters,
                     body: None,
@@ -118,7 +145,7 @@ impl Parser {
         if self.cur_token.token_type == TokenType::Rparem {
             return Ok(parameters);
         }
-        parameters = self.parse_type_decls(TokenType::Comma, TokenType::Rparem, Parameter::new)?;
+        parameters = self.parse_type_refs(TokenType::Comma, TokenType::Rparem, Parameter::new)?;
         if self.cur_token.token_type != TokenType::Rparem {
             return Err(self.error(format!(
                 "[parse_function_params] expected next token to be Rparem, got {:?}",
@@ -165,7 +192,7 @@ char c2 = '\n';
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::VarDecl(declarators) => {
+                ExternalItem::VarDeclNode(declarators) => {
                     for (i, (type_dec, declarator)) in declarators.iter().enumerate() {
                         let (expected_type, expected_name, expected_value) = &expected[row_num][i];
                         assert_eq!(type_dec.type_name(), expected_type.to_string());
@@ -203,11 +230,11 @@ struct point* movepoint(struct point* p, int x, int y);
                 "add",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Named("int".to_string()),
+                        type_ref: TypeRef::Named("int".to_string()),
                         name: "a".to_string(),
                     },
                     Parameter {
-                        type_dec: TypeRef::Named("int".to_string()),
+                        type_ref: TypeRef::Named("int".to_string()),
                         name: "b".to_string(),
                     },
                 ],
@@ -218,7 +245,7 @@ struct point* movepoint(struct point* p, int x, int y);
                 "int",
                 "foo",
                 vec![Parameter {
-                    type_dec: TypeRef::Pointer(Box::new(TypeRef::Named("int".to_string()))),
+                    type_ref: TypeRef::Pointer(Box::new(TypeRef::Named("int".to_string()))),
                     name: "as".to_string(),
                 }],
                 None,
@@ -227,8 +254,8 @@ struct point* movepoint(struct point* p, int x, int y);
                 "int",
                 "bar",
                 vec![Parameter {
-                    type_dec: TypeRef::Array {
-                        type_dec: Box::new(TypeRef::Named("int".to_string())),
+                    type_ref: TypeRef::Array {
+                        type_ref: Box::new(TypeRef::Named("int".to_string())),
                         size: None,
                     },
                     name: "as".to_string(),
@@ -240,17 +267,11 @@ struct point* movepoint(struct point* p, int x, int y);
                 "addpoint",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Struct {
-                            tag_name: Some("point".to_string()),
-                            members: vec![],
-                        },
+                        type_ref: TypeRef::Struct(StructRef::TagName("point".to_string())),
                         name: "p".to_string(),
                     },
                     Parameter {
-                        type_dec: TypeRef::Struct {
-                            tag_name: Some("point".to_string()),
-                            members: vec![],
-                        },
+                        type_ref: TypeRef::Struct(StructRef::TagName("point".to_string())),
                         name: "q".to_string(),
                     },
                 ],
@@ -261,18 +282,17 @@ struct point* movepoint(struct point* p, int x, int y);
                 "movepoint",
                 vec![
                     Parameter {
-                        type_dec: TypeRef::Pointer(Box::new(TypeRef::Struct {
-                            tag_name: Some("point".to_string()),
-                            members: vec![],
-                        })),
+                        type_ref: TypeRef::Pointer(Box::new(TypeRef::Struct(StructRef::TagName(
+                            "point".to_string(),
+                        )))),
                         name: "p".to_string(),
                     },
                     Parameter {
-                        type_dec: TypeRef::Named("int".to_string()),
+                        type_ref: TypeRef::Named("int".to_string()),
                         name: "x".to_string(),
                     },
                     Parameter {
-                        type_dec: TypeRef::Named("int".to_string()),
+                        type_ref: TypeRef::Named("int".to_string()),
                         name: "y".to_string(),
                     },
                 ],
@@ -292,8 +312,8 @@ struct point* movepoint(struct point* p, int x, int y);
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::FunctionDecl(Function {
-                    return_type_dec,
+                ExternalItem::FunctionDeclNode(FunctionDecl {
+                    return_type_ref: return_type_dec,
                     name,
                     parameters,
                     body,
@@ -302,11 +322,18 @@ struct point* movepoint(struct point* p, int x, int y);
                         &expected[row_num];
                     assert_eq!(
                         return_type_dec.type_name(),
-                        expected_return_type.to_string()
+                        expected_return_type.to_string(),
+                        "row_num: {}",
+                        row_num,
                     );
-                    assert_eq!(*name, *expected_name);
-                    assert_eq!(parameters, expected_parameters);
-                    assert_eq!(body.as_ref().map(|x| x.0.to_string()), *expected_body);
+                    assert_eq!(*name, *expected_name, "row_num: {}", row_num);
+                    assert_eq!(parameters, expected_parameters, "row_num: {}", row_num);
+                    assert_eq!(
+                        body.as_ref().map(|x| x.0.to_string()),
+                        *expected_body,
+                        "row_num: {}",
+                        row_num
+                    );
                 }
                 _ => panic!("ExternalItem is not FunctionDecl"),
             }
@@ -343,7 +370,7 @@ struct key {
         assert_eq!(parse_results.len(), expected.len());
         for (row_num, item) in parse_results.iter().enumerate() {
             match item {
-                ExternalItem::Struct(TypeRef::Struct { tag_name, members }) => {
+                ExternalItem::StructDeclNode(StructDecl { tag_name, members }) => {
                     let (_, expected_members, expected_tag_name) = &expected[row_num];
                     assert_eq!(
                         tag_name
