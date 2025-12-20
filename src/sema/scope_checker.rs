@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::fmt;
 
 use crate::parser::ast::{
-    Expression, ExpressionNode, ExternalItem, Function, Parameter, Program, Statement,
-    StatementNode, TypeRef,
+    Expression, ExpressionNode, ExternalItem, FunctionDecl, Parameter, Program, Statement,
+    StatementNode, StructDecl, TypeRef,
 };
 
 #[derive(Debug)]
@@ -81,20 +81,20 @@ pub fn check_scope(ast: &Program) -> Result<()> {
     for item_node in &ast.external_item_nodes {
         let (item, _) = item_node;
         match item {
-            ExternalItem::Struct(TypeRef::Struct {
+            ExternalItem::StructDeclNode(StructDecl {
                 tag_name: Some(tag_name),
                 members: _,
             }) => {
                 let s = format!("struct {}", tag_name);
                 types.put(s.as_str());
             }
-            ExternalItem::VarDecl(declarators) => {
+            ExternalItem::VarDeclNode(declarators) => {
                 for (_, declarator) in declarators {
                     global_scope.put(declarator.name.as_str());
                     // var_decl_initializer.push(declarator);
                 }
             }
-            ExternalItem::FunctionDecl(function) => {
+            ExternalItem::FunctionDeclNode(function) => {
                 functions.put(&function.name);
             }
             _ => {}
@@ -110,8 +110,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         .external_item_nodes
         .iter()
         .filter_map(|(item, _)| {
-            if let ExternalItem::FunctionDecl(Function {
-                return_type_dec,
+            if let ExternalItem::FunctionDeclNode(FunctionDecl {
+                return_type_ref: return_type_dec,
                 name,
                 parameters,
                 body,

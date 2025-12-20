@@ -1,3 +1,5 @@
+use crate::parser::ast::{StructDecl, StructRef};
+
 use super::ast::{
     Declarator, Statement, StatementNode, SwitchBlock, SwitchLabel, SwitchLabelEntry, TypeRef,
 };
@@ -53,8 +55,17 @@ impl Parser {
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<StatementNode> {
         let loc = self.cur_token.loc();
-        let type_dec = if self.cur_token.token_type == TokenType::Struct {
-            self.parse_struct_type()?
+        let type_ref = if self.cur_token.token_type == TokenType::Struct {
+            let (tag_name, members) = self.parse_struct_type()?;
+            if !members.is_empty() {
+                let struct_decl = StructDecl { tag_name, members };
+                TypeRef::Struct(StructRef::Decl(struct_decl))
+            } else if tag_name.is_some() {
+                TypeRef::Struct(StructRef::TagName(tag_name.unwrap()))
+            } else {
+                let error_msg = format!("[parse_vardecl_statement] invalid struct, tag name is {}. members length is {}", tag_name.unwrap_or_default(), members.len());
+                return Err(self.error(error_msg));
+            }
         } else {
             let t = TypeRef::Named(self.cur_token.literal());
             self.next_token();
@@ -64,7 +75,7 @@ impl Parser {
             if self.cur_token.token_type == TokenType::Semicolon {
                 vec![]
             } else {
-                self.parse_declarators(&type_dec)?
+                self.parse_declarators(&type_ref)?
             };
         if self.cur_token.token_type == TokenType::Semicolon {
             Ok((Statement::VarDecl(declarators), loc))
