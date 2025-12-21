@@ -118,10 +118,8 @@ pub fn check_scope(ast: &Program) -> Result<()> {
             }) = item
             {
                 Some(check_function(
-                    // &types,
                     &functions,
                     &global_scope,
-                    return_type_dec,
                     name,
                     parameters,
                     body,
@@ -141,28 +139,13 @@ pub fn check_scope(ast: &Program) -> Result<()> {
 }
 
 fn check_function(
-    // types: &Types,
     functions: &Functions,
     global_scope: &LocalScope,
-    return_type_dec: &TypeRef,
     name: &str,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
 ) -> Vec<ScopeError> {
     let mut results: Vec<ScopeError> = vec![];
-    println!(
-        "@@@@ check_function ::: return_type_dec: {:?}, name: {:?}, parameters: {:?}",
-        return_type_dec.type_name(),
-        name,
-        parameters
-    );
-
-    // スコープチェックでは型の確認は不要
-    // // check return type
-    // if !types.find(&return_type_dec.type_name()) {
-    //     results.push(Error { errors: vec![format!("return type is not defined: {:?}", return_type_dec.type_name())] });
-    //     return results;
-    // }
 
     // check parameters
     let mut local_scope = LocalScope {
@@ -190,7 +173,6 @@ fn check_function(
 }
 
 fn check_statement(
-    // types: &Types,
     functions: &Functions,
     scope: &mut LocalScope,
     stmt_node: &StatementNode,
