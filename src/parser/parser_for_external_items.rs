@@ -392,4 +392,39 @@ struct key {
             }
         }
     }
+
+    #[test]
+    fn test_invalid_external_return() {
+        // given
+        let input = "
+int x = 10;
+return x;
+";
+        let mut p = Parser::new(Lexer::new(input));
+
+        // when
+        let res = p.parse_external_item().map(|(item, _)| item).unwrap();
+        p.next_token();
+
+        // then
+        if let ExternalItem::VarDeclNode(declarators) = res {
+            let (type_dec, declarator) = &declarators[0];
+            let (expected_type, expected_name, expected_value) = ("int", "x", "10".to_string());
+            assert_eq!(type_dec.type_name(), expected_type.to_string());
+            assert_eq!(declarator.name, *expected_name);
+            assert_eq!(
+                declarator.value.as_ref().map(|x| x.0.to_string()),
+                Some(expected_value)
+            );
+        }
+
+        // when
+        let e = p.parse_external_item().err().unwrap();
+        p.next_token();
+
+        assert_eq!(
+            e.errors[0],
+            "error:3:1: [parse_external_item] expected external item token, got Return"
+        );
+    }
 }

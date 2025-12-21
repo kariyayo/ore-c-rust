@@ -223,7 +223,7 @@ pub enum SwitchLabel {
 /// 式を表すノード
 pub type ExpressionNode = (Expression, Loc);
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Expression {
     Int(i32),
     CharacterLiteral(char),
