@@ -55,12 +55,20 @@ impl Parser {
     // ex) int a, *b, c[10];
     fn parse_vardecl_statement(&mut self) -> Result<StatementNode> {
         let loc = self.cur_token.loc();
+        let is_typedef = self.cur_token.token_type == TokenType::TypeDef;
+        if is_typedef {
+            self.next_token();
+        }
         let type_ref = if self.cur_token.token_type == TokenType::Struct {
             let (tag_name, members) = self.parse_struct_type()?;
             if !members.is_empty() {
-                let struct_decl = StructDecl { tag_name, members };
-                TypeRef::Struct(StructRef::Decl(struct_decl))
-            } else if tag_name.is_some() {
+                let decl = StructDecl { tag_name, members };
+                if is_typedef {
+                    TypeRef::TypeAlias(Box::new(TypeRef::Struct(StructRef::Decl(decl))))
+                } else {
+                    TypeRef::Struct(StructRef::Decl(decl))
+                }
+            } else if tag_name.is_some() && !is_typedef {
                 TypeRef::Struct(StructRef::TagName(tag_name.unwrap()))
             } else {
                 let error_msg = format!(
@@ -75,6 +83,27 @@ impl Parser {
             self.next_token();
             t
         };
+
+        if is_typedef {
+            let mut aliases: Vec<String> = vec![];
+            loop {
+                if self.cur_token.token_type != TokenType::Ident {
+                    return Err(self.error(format!(
+                        "[parse_vardecl_statement] expected next token to be IDENT, got {:?}",
+                        self.cur_token.token_type
+                    )));
+                }
+                let name = self.cur_token.literal();
+                aliases.push(name);
+
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Comma {
+                    break;
+                }
+            }
+            return Ok((Statement::TypeRef(type_ref, aliases), self.cur_token.loc()));
+        }
+
         let declarators: Vec<(TypeRef, Declarator)> =
             if self.cur_token.token_type == TokenType::Semicolon {
                 vec![]

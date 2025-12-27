@@ -13,6 +13,8 @@ pub enum TypeRef {
     },
     // 構造体
     Struct(StructRef),
+    // typedef
+    TypeAlias(Box<TypeRef>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -54,6 +56,9 @@ impl TypeRef {
                     }
                 }
             },
+            TypeRef::TypeAlias(type_ref) => {
+                format!("typedef {}", type_ref.type_name())
+            }
         }
     }
 }
@@ -130,6 +135,7 @@ pub type ExternalItemNode = (ExternalItem, Loc);
 pub enum ExternalItem {
     FunctionDeclNode(FunctionDecl),
     StructDeclNode(StructDecl),
+    TypeRefNode(TypeRef, Vec<String>),
     VarDeclNode(Vec<(TypeRef, Declarator)>),
 }
 
@@ -141,6 +147,7 @@ pub enum Statement {
     Return(Option<ExpressionNode>),
     Break,
     Continue,
+    TypeRef(TypeRef, Vec<String>),
     VarDecl(Vec<(TypeRef, Declarator)>),
     Block(Vec<StatementNode>),
     If {
@@ -270,6 +277,9 @@ impl fmt::Display for Statement {
             },
             Statement::Break => write!(f, "break;"),
             Statement::Continue => write!(f, "continue;"),
+            Statement::TypeRef(type_ref, items) => {
+                write!(f, "{} {}", type_ref.type_name(), items.join(", "))
+            }
             Statement::VarDecl(declarators) => {
                 let mut parts: Vec<String> = vec![];
                 for (type_ref, declarator) in declarators {

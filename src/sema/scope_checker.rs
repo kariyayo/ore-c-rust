@@ -193,6 +193,19 @@ fn check_statement(
         Statement::Continue => {
             vec![Ok(())]
         }
+        Statement::TypeRef(_type_ref, items) => {
+            let mut results: Vec<Result<()>> = vec![];
+            for alias in items.iter() {
+                if scope.find(alias.as_str()) {
+                    results.push(Err(ScopeError {
+                        errors: vec![format!("variable `{}` is duplicated", alias)],
+                    }));
+                } else {
+                    scope.put(alias.as_str());
+                }
+            }
+            results
+        }
         Statement::VarDecl(items) => {
             let mut results: Vec<Result<()>> = vec![];
             for (_, decl) in items {

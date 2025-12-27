@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt,
     hash::Hash,
-    vec,
+    result, vec,
 };
 use uuid::Uuid;
 
@@ -39,7 +39,7 @@ impl fmt::Display for TypeError {
 
 impl core::error::Error for TypeError {}
 
-pub type Result<T> = std::result::Result<T, TypeError>;
+pub type Result<T> = result::Result<T, TypeError>;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 enum Type {
@@ -78,8 +78,8 @@ impl Type {
 
 #[derive(Debug)]
 pub struct TypeTable {
-    entities: HashMap<String, Type>,
-    types: HashSet<Type>,
+    map: HashMap<String, Type>,
+    set: HashSet<Type>,
 }
 
 impl TypeTable {
@@ -89,22 +89,45 @@ impl TypeTable {
         for value in entities.values() {
             types.insert(value.clone());
         }
-        TypeTable { entities, types }
+        TypeTable {
+            map: entities,
+            set: types,
+        }
     }
-    fn put_struct(&mut self, ty: StructDecl) {
-        self.entities.insert(
-            ty.clone().tag_name.unwrap_or(Uuid::new_v4().to_string()),
-            Type::Struct(ty.clone()),
+
+    fn put_struct(&mut self, key: String, ty: StructDecl) -> result::Result<(), String> {
+        println!(
+            key, self.map
         );
-        self.types.insert(Type::Struct(ty.clone()));
+        if self.map.contains_key(&key) {
+            return result::Result::Err(format!("`{}` is already defined", key))
+        }
+        self.map.insert(key, Type::Struct(ty.clone()));
+        self.set.insert(Type::Struct(ty.clone()));
+        result::Result::Ok(())
     }
-    fn find_basic(&self, ty: String) -> Option<Type> {
-        self.types.get(&Type::Basic(ty)).cloned()
+
+    fn find_by_name(&self, ty: String) -> Option<Type> {
+        println!(
+            self.set, self.map
+        );
+        self.set
+            .get(&Type::Basic(ty.clone()))
+            .or_else(|| self.map.get(&ty))
+            .cloned()
     }
+
     fn find_by_struct_ref(&self, struct_ref: StructRef) -> Option<Type> {
         match struct_ref {
-            StructRef::TagName(name) => self.entities.get(&name.to_string()).cloned(),
-            StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl)),
+            StructRef::TagName(name) => self.map.get(&name.to_string()).cloned(),
+            StructRef::Decl(struct_decl) => {
+                let ty = Type::Struct(struct_decl);
+                if self.set.contains(&ty) {
+                    Some(ty)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -161,15 +184,20 @@ struct Env<'a> {
 }
 
 impl<'a> Env<'a> {
-    fn put_struct_type(&mut self, ty: StructDecl) {
-        self.type_table.put_struct(ty);
+    fn put_struct_type(&mut self, ty: StructDecl) -> result::Result<(), String> {
+        let key = ty.clone().tag_name.unwrap_or(Uuid::new_v4().to_string());
+        self.type_table.put_struct(key, ty)
+    }
+
+    fn put_typedef(&mut self, alias: String, ty: StructDecl) -> result::Result<(), String> {
+        self.type_table.put_struct(alias, ty)
     }
 
     fn solve_type(&self, type_ref: &TypeRef, loc: &Loc) -> Result<Type> {
         match type_ref {
             TypeRef::Named(name) => {
                 self.type_table
-                    .find_basic(name.to_string())
+                    .find_by_name(name.to_string())
                     .ok_or(TypeError::new(
                         loc,
                         format!("variable type `{}` is not defined", type_ref.type_name()),
@@ -191,6 +219,9 @@ impl<'a> Env<'a> {
                     loc,
                     format!("struct type `{}` is not defined", type_ref.type_name()),
                 )),
+            TypeRef::TypeAlias(type_ref) => self
+                .solve_type(type_ref, loc)
+                .map(|ty| Type::Pointer(Box::new(ty))),
         }
     }
 
@@ -238,7 +269,13 @@ pub fn check_type(ast: &Program) -> Result<()> {
                 if !es.is_empty() {
                     results.extend(es);
                 } else {
-                    env.put_struct_type(struct_decl.clone());
+                    env.put_struct_type(struct_decl.clone())
+                        .map_err(|msg| TypeError::new(external_item_loc, msg))
+                        .err()
+                        .into_iter()
+                        .for_each(|e| {
+                            results.push(e);
+                        });
                 }
             }
             ExternalItem::VarDeclNode(items) => {
@@ -246,10 +283,40 @@ pub fn check_type(ast: &Program) -> Result<()> {
                     if let Err(e) = check_declarator(&env, type_ref, decl, external_item_loc) {
                         results.push(e);
                     } else {
-                        if let TypeRef::Struct(StructRef::Decl(struct_decl)) = type_ref.clone() {
-                            env.put_struct_type(struct_decl);
+                        let res = if let TypeRef::Struct(StructRef::Decl(struct_decl)) =
+                            type_ref.clone()
+                        {
+                            env.put_struct_type(struct_decl.clone())
+                                .map_err(|msg| TypeError::new(external_item_loc, msg))
+                        } else {
+                            Ok(())
+                        };
+                        if let Err(e) = res {
+                            results.push(e);
+                        } else {
+                            env.put_vardecl(decl.name.as_str(), type_ref.clone());
                         }
-                        env.put_vardecl(decl.name.as_str(), type_ref.clone());
+                    }
+                }
+            }
+            ExternalItem::TypeRefNode(type_ref, items) => {
+                for alias in items {
+                    match type_ref {
+                        TypeRef::TypeAlias(type_ref) => {
+                            if let TypeRef::Struct(StructRef::Decl(struct_decl)) = *type_ref.clone()
+                            {
+                                env.put_typedef(alias.clone(), struct_decl)
+                                    .map_err(|msg| TypeError::new(external_item_loc, msg))
+                                    .err()
+                                    .into_iter()
+                                    .for_each(|e| {
+                                        results.push(e);
+                                    });
+                            }
+                        }
+                        _ => {
+                            // NOP
+                        }
                     }
                 }
             }
@@ -293,6 +360,28 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
         }
         Statement::Break | Statement::Continue => {
             // NOP
+        }
+        Statement::TypeRef(type_ref, items) => {
+            for alias in items {
+                match type_ref {
+                    TypeRef::TypeAlias(type_ref) => {
+                        if let TypeRef::TypeAlias(ty) = *type_ref.clone()
+                            && let TypeRef::Struct(StructRef::Decl(struct_decl)) = *ty
+                        {
+                            env.put_typedef(alias.clone(), struct_decl)
+                                .map_err(|msg| TypeError::new(stmt_loc, msg))
+                                .err()
+                                .into_iter()
+                                .for_each(|e| {
+                                    results.push(e);
+                                });
+                        }
+                    }
+                    _ => {
+                        // NOP
+                    }
+                }
+            }
         }
         Statement::VarDecl(items) => {
             results.append(&mut check_var_decl_statement(env, items, stmt_loc));
@@ -839,12 +928,9 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 Err(TypeError { errors })
             }
         }
-        TypeRef::Struct(struct_ref) => {
-            let tyopt: Option<Type> = match struct_ref {
-                StructRef::TagName(_) => env.solve_type(type_ref, loc).ok(),
-                StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl.clone())),
-            };
-            let Some(Type::Struct(struct_decl)) = tyopt else {
+        TypeRef::Struct(..) => {
+            // FIXME: solve_typeにlocを渡すのやめたい
+            let Some(Type::Struct(struct_decl)) = env.solve_type(type_ref, loc).ok() else {
                 return Err(TypeError::new(
                     loc,
                     format!("type not defined, {}", type_ref.type_name()),
@@ -891,6 +977,16 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
             } else {
                 Err(TypeError { errors })
             }
+        }
+        TypeRef::TypeAlias(type_ref) => {
+            let result = env.solve_type(type_ref, loc);
+            if result.is_ok() {
+                return Err(TypeError::new(
+                    loc,
+                    format!("type is duplicated, {}", type_ref.type_name()),
+                ));
+            }
+            result
         }
     }
 }
@@ -1779,6 +1875,60 @@ int main() {
                 errors[9]
             );
             assert_eq!("error:22:32: variable `aaa` is not defined", errors[10]);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_check_valid_typedef() {
+        // given
+        let input = r#"
+typedef struct point {
+    int x;
+    int y;
+} point;
+
+point p;
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(TypeError { errors }) = result.err() {
+            assert!(false, "errors: {:?}", errors);
+        } else {
+            assert!(true);
+        }
+    }
+
+    #[test]
+    fn test_check_invalid_typedef() {
+        // given
+        let input = r#"
+typedef struct {
+    int x;
+    int y;
+} point;
+typedef struct {
+    int x;
+    int y;
+} point;
+point p;
+"#;
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_type(&ast);
+
+        // then
+        if let Some(TypeError { errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!("error:9:8: `point` is already defined", errors[0]);
         } else {
             assert!(false);
         }
