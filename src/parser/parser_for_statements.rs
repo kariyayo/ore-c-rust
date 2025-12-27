@@ -63,7 +63,11 @@ impl Parser {
             } else if tag_name.is_some() {
                 TypeRef::Struct(StructRef::TagName(tag_name.unwrap()))
             } else {
-                let error_msg = format!("[parse_vardecl_statement] invalid struct, tag name is {}. members length is {}", tag_name.unwrap_or_default(), members.len());
+                let error_msg = format!(
+                    "[parse_vardecl_statement] invalid struct, tag name is {}. members length is {}",
+                    tag_name.unwrap_or_default(),
+                    members.len()
+                );
                 return Err(self.error(error_msg));
             }
         } else {

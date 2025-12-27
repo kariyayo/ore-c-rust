@@ -5,8 +5,8 @@ mod parser_for_statements;
 
 use self::ast::{Declarator, TypeRef};
 use self::parser_for_expressions::ExpressionPrecedence;
-use crate::lexer::token::{Token, TokenType};
 use crate::lexer::Lexer;
+use crate::lexer::token::{Token, TokenType};
 use crate::parser::ast::StructRef;
 
 #[derive(Debug)]
