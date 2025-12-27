@@ -47,7 +47,7 @@ pub fn check_semantic(ast: &Program) -> Result<()> {
                 body,
             }) = &item_node.0
             {
-                Some(check_function(Context::ExternalItem(&item_node), body))
+                Some(check_function(Context::ExternalItem(item_node), body))
             } else {
                 None
             }

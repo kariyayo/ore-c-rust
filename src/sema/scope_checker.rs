@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::parser::ast::{
     Expression, ExpressionNode, ExternalItem, FunctionDecl, Parameter, Program, Statement,
-    StatementNode, StructDecl, TypeRef,
+    StatementNode, StructDecl,
 };
 
 #[derive(Debug)]
@@ -111,7 +111,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         .iter()
         .filter_map(|(item, _)| {
             if let ExternalItem::FunctionDeclNode(FunctionDecl {
-                return_type_ref: return_type_dec,
+                return_type_ref: _,
                 name,
                 parameters,
                 body,

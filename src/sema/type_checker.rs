@@ -575,45 +575,45 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
             operator,
             left,
             right,
-        } => {
-            match operator.as_str() {
-                "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
-                    check_basic_calc_operator(env, left, right)
-                }
-                "." => {
-                    let left_type = check_expression(env, left)?;
-                    check_struct(env, left_type, &left.as_ref().1, right)
-                }
-                "->" => {
-                    let left_type = check_expression(env, left)?;
-                    let Type::Pointer(ty) = left_type else {
-                        return Err(TypeError::new(
-                            &left.as_ref().1,
-                            format!(
-                                "left operand is not pointer. left is `{}`.",
-                                left_type.type_name()
-                            ),
-                        ));
-                    };
-                    check_struct(env, *ty, &left.as_ref().1, right)
-                }
-                _ => {
-                    let left_type = check_expression(env, left)?;
-                    let right_type = check_expression(env, right)?;
-                    if left_type != right_type {
-                        Err(TypeError::new(
-                            &left.as_ref().1,
-                            format!(
-                                "type mismatched for operator `{}`. left type is {}, right type is {}",
-                                operator, left_type.type_name(), right_type.type_name()
-                            ),
-                        ))
-                    } else {
-                        Ok(left_type)
-                    }
+        } => match operator.as_str() {
+            "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
+                check_basic_calc_operator(env, left, right)
+            }
+            "." => {
+                let left_type = check_expression(env, left)?;
+                check_struct(env, left_type, &left.as_ref().1, right)
+            }
+            "->" => {
+                let left_type = check_expression(env, left)?;
+                let Type::Pointer(ty) = left_type else {
+                    return Err(TypeError::new(
+                        &left.as_ref().1,
+                        format!(
+                            "left operand is not pointer. left is `{}`.",
+                            left_type.type_name()
+                        ),
+                    ));
+                };
+                check_struct(env, *ty, &left.as_ref().1, right)
+            }
+            _ => {
+                let left_type = check_expression(env, left)?;
+                let right_type = check_expression(env, right)?;
+                if left_type != right_type {
+                    Err(TypeError::new(
+                        &left.as_ref().1,
+                        format!(
+                            "type mismatched for operator `{}`. left type is {}, right type is {}",
+                            operator,
+                            left_type.type_name(),
+                            right_type.type_name()
+                        ),
+                    ))
+                } else {
+                    Ok(left_type)
                 }
             }
-        }
+        },
         Expression::Postfix { operator, left } => match operator.as_str() {
             "++" | "--" => {
                 let left_type = check_expression(env, left)?;
@@ -800,17 +800,17 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
             "invalid initializer for pointer type".to_string(),
         )),
         TypeRef::Array { type_ref, size } => {
-            if let Some(l) = size {
-                if init_elms.len() > (*l).try_into().unwrap() {
-                    return Err(TypeError::new(
-                        loc,
-                        format!(
-                            "too many initializers for array of size {}, but it length is {}",
-                            l,
-                            init_elms.len()
-                        ),
-                    ));
-                }
+            if let Some(l) = size
+                && init_elms.len() > (*l).try_into().unwrap()
+            {
+                return Err(TypeError::new(
+                    loc,
+                    format!(
+                        "too many initializers for array of size {}, but it length is {}",
+                        l,
+                        init_elms.len()
+                    ),
+                ));
             };
             let errors: Vec<String> = init_elms
                 .iter()
@@ -1517,7 +1517,10 @@ int main() {
                 "error:9:18: type error. initialize variable type is char, value type is int",
                 errors[1]
             );
-            assert_eq!("error:11:5: type mismatched for operator `=`. left type is char, right type is int", errors[2]);
+            assert_eq!(
+                "error:11:5: type mismatched for operator `=`. left type is char, right type is int",
+                errors[2]
+            );
             assert_eq!("error:13:17: wrong number of arguments, `inc`.", errors[3]);
             assert_eq!(
                 "error:14:18: mismatched type for argument 1 in function call, `inc`.",
@@ -1614,12 +1617,18 @@ int main() {
         // then
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 12);
-            assert_eq!("error:9:6: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
+            assert_eq!(
+                "error:9:6: type mismatched for operator `=`. left type is int, right type is char*",
+                errors[0]
+            );
             assert_eq!(
                 "error:10:7: field `agee` is not defined. defined members: {age, name}",
                 errors[1]
             );
-            assert_eq!("error:12:9: type mismatched for operator `=`. left type is char*, right type is int", errors[2]);
+            assert_eq!(
+                "error:12:9: type mismatched for operator `=`. left type is char*, right type is int",
+                errors[2]
+            );
             assert_eq!(
                 "error:13:11: field `namee` is not defined. defined members: {age, name}",
                 errors[3]
@@ -1628,19 +1637,31 @@ int main() {
                 "error:14:5: left operand is not pointer. left is `struct person`.",
                 errors[4]
             );
-            assert_eq!("error:17:12: type mismatched for operator `=`. left type is char*, right type is int", errors[5]);
+            assert_eq!(
+                "error:17:12: type mismatched for operator `=`. left type is char*, right type is int",
+                errors[5]
+            );
             assert_eq!(
                 "error:18:13: field `namee` is not defined. defined members: {age, name}",
                 errors[6]
             );
-            assert_eq!("error:19:6: left type is not struct. left type is Pointer(Struct(StructDecl { tag_name: Some(\"person\"), members: [StructMember { type_ref: Named(\"int\"), name: \"age\" }, StructMember { type_ref: Pointer(Named(\"char\")), name: \"name\" }] }))", errors[7]);
+            assert_eq!(
+                "error:19:6: left type is not struct. left type is Pointer(Struct(StructDecl { tag_name: Some(\"person\"), members: [StructMember { type_ref: Named(\"int\"), name: \"age\" }, StructMember { type_ref: Pointer(Named(\"char\")), name: \"name\" }] }))",
+                errors[7]
+            );
             assert_eq!("error:21:5: variable `pp` is not defined", errors[8]);
             assert_eq!(
                 "error:22:7: right is not Identifier. right: Int(1)",
                 errors[9]
             );
-            assert_eq!("error:24:26: type mismatched for initializer. left type is int, right type is char*", errors[10]);
-            assert_eq!("error:24:34: type mismatched for initializer. left type is char*, right type is int", errors[11]);
+            assert_eq!(
+                "error:24:26: type mismatched for initializer. left type is int, right type is char*",
+                errors[10]
+            );
+            assert_eq!(
+                "error:24:34: type mismatched for initializer. left type is char*, right type is int",
+                errors[11]
+            );
         } else {
             assert!(false);
         }
@@ -1717,7 +1738,10 @@ int main() {
         // then
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 11);
-            assert_eq!("error:4:7: type mismatched for operator `=`. left type is int, right type is char*", errors[0]);
+            assert_eq!(
+                "error:4:7: type mismatched for operator `=`. left type is int, right type is char*",
+                errors[0]
+            );
             assert_eq!(
                 "error:5:8: index should be int. but it is `char*`.",
                 errors[1]
@@ -1734,7 +1758,10 @@ int main() {
                 "error:14:8: index should be int. but it is `int*`.",
                 errors[4]
             );
-            assert_eq!("error:17:7: type mismatched for operator `=`. left type is int, right type is char*", errors[5]);
+            assert_eq!(
+                "error:17:7: type mismatched for operator `=`. left type is int, right type is char*",
+                errors[5]
+            );
             assert_eq!(
                 "error:18:8: index should be int. but it is `char*`.",
                 errors[6]
@@ -1747,7 +1774,10 @@ int main() {
                 "error:20:8: index should be int. but it is `int*`.",
                 errors[8]
             );
-            assert_eq!("error:22:22: type mismatched for initializer. left type is int, right type is char*", errors[9]);
+            assert_eq!(
+                "error:22:22: type mismatched for initializer. left type is int, right type is char*",
+                errors[9]
+            );
             assert_eq!("error:22:32: variable `aaa` is not defined", errors[10]);
         } else {
             assert!(false);
