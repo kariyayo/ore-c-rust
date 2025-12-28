@@ -1890,6 +1890,10 @@ typedef struct point {
 } point;
 
 point p;
+
+int main() {
+    point p1;
+}
 "#;
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
@@ -1918,6 +1922,10 @@ typedef struct {
     int y;
 } point;
 point p;
+
+int main() {
+    ppppp p1;
+}
 "#;
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
@@ -1927,8 +1935,9 @@ point p;
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 1);
+            assert_eq!(errors.len(), 2);
             assert_eq!("error:9:8: `point` is already defined", errors[0]);
+            assert_eq!("error:13:5: variable type `ppppp` is not defined", errors[1]);
         } else {
             assert!(false);
         }

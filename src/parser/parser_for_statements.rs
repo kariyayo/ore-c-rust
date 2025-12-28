@@ -11,6 +11,7 @@ impl Parser {
         match self.cur_token.token_type {
             TokenType::Return => self.parse_return_statement(),
             TokenType::Int | TokenType::Char | TokenType::Struct => self.parse_vardecl_statement(),
+            TokenType::Ident if self.peek_token.token_type == TokenType::Ident => self.parse_vardecl_statement(),
             TokenType::Lbrace => self.parse_block_statement(),
             TokenType::If => self.parse_if_statement(),
             TokenType::Switch => self.parse_switch_statement(),
@@ -550,6 +551,7 @@ struct { int a; int b; } p, q;
 struct point z;
 struct { int x; int y; } p = { 10, 20 };
 struct User a = { 1, 2 };
+point p1;
 ";
         let expected = vec![
             vec![("int", "five", Some("5"))],
@@ -565,6 +567,7 @@ struct User a = { 1, 2 };
             vec![("struct point", "z", None)],
             vec![("struct {\n    int x;\n    int y;\n}", "p", Some("{10, 20}"))],
             vec![("struct User", "a", Some("{1, 2}"))],
+            vec![("point", "p1", None)],
         ];
 
         // when
