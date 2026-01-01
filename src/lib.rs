@@ -4,6 +4,7 @@ pub mod repl;
 mod sema;
 
 pub fn create_parser(input: &str) -> parser::Parser {
+    // compiler::compile(input);
     let l = lexer::Lexer::new(input);
     let p = parser::Parser::new(l);
     return p;

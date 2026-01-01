@@ -13,6 +13,8 @@ pub enum TypeRef {
     },
     // 構造体
     Struct(StructRef),
+    // typedef
+    TypeAlias(Box<TypeRef>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -54,6 +56,9 @@ impl TypeRef {
                     }
                 }
             },
+            TypeRef::TypeAlias(type_ref) => {
+                format!("typedef {}", type_ref.type_name())
+            }
         }
     }
 }
@@ -130,17 +135,19 @@ pub type ExternalItemNode = (ExternalItem, Loc);
 pub enum ExternalItem {
     FunctionDeclNode(FunctionDecl),
     StructDeclNode(StructDecl),
+    TypedefNode(TypeRef, Vec<String>),
     VarDeclNode(Vec<(TypeRef, Declarator)>),
 }
 
 /// 文を表すノード
 pub type StatementNode = (Statement, Loc);
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Statement {
     Return(Option<ExpressionNode>),
     Break,
     Continue,
+    Typedef(TypeRef, Vec<String>),
     VarDecl(Vec<(TypeRef, Declarator)>),
     Block(Vec<StatementNode>),
     If {
@@ -170,7 +177,7 @@ pub enum Statement {
     ExpressionStatement(ExpressionNode),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Declarator {
     pub name: String,
     pub value: Option<ExpressionNode>,
@@ -202,19 +209,19 @@ pub struct Declarator {
 ///     ],
 /// }
 ///
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct SwitchBlock {
     pub label_entries: Vec<SwitchLabelEntry>,
     pub body: Vec<StatementNode>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct SwitchLabelEntry {
     pub labels: Vec<SwitchLabel>,
     pub start_index: i32,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SwitchLabel {
     Case(ExpressionNode),
     Default,
@@ -270,6 +277,9 @@ impl fmt::Display for Statement {
             },
             Statement::Break => write!(f, "break;"),
             Statement::Continue => write!(f, "continue;"),
+            Statement::Typedef(type_ref, items) => {
+                write!(f, "{} {}", type_ref.type_name(), items.join(", "))
+            }
             Statement::VarDecl(declarators) => {
                 let mut parts: Vec<String> = vec![];
                 for (type_ref, declarator) in declarators {

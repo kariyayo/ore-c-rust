@@ -88,12 +88,12 @@ impl Parser {
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.clone();
         self.peek_token = self.l.next_token();
-        println!(
-            "#### current token_type:{:?}, literal:{}, peek token_type:{:?} ####",
-            self.cur_token.token_type,
-            self.cur_token.literal(),
-            self.peek_token.token_type
-        );
+        // println!(
+        //     "#### current token_type:{:?}, literal:{}, peek token_type:{:?} ####",
+        //     self.cur_token.token_type,
+        //     self.cur_token.literal(),
+        //     self.peek_token.token_type
+        // );
     }
 
     fn parse_struct_type(&mut self) -> Result<(ast::TagName, Vec<ast::StructMember>)> {

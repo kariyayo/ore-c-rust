@@ -1,15 +1,13 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt,
-    hash::Hash,
     vec,
 };
-use uuid::Uuid;
 
-use crate::parser::ast::{
+use crate::{parser::ast::{
     Declarator, Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program,
     Statement, StatementNode, StructDecl, StructRef, SwitchBlock, SwitchLabel, TypeRef,
-};
+}, sema::env::{Env, Scope, Type}};
 
 #[derive(Debug)]
 pub struct TypeError {
@@ -41,217 +39,17 @@ impl core::error::Error for TypeError {}
 
 pub type Result<T> = std::result::Result<T, TypeError>;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-enum Type {
-    Basic(String),
-    Struct(StructDecl),
-    Pointer(Box<Type>),
-    Array {
-        type_dec: Box<Type>,
-        size: Option<u32>,
-    },
-}
-
-impl Type {
-    fn type_name(&self) -> String {
-        match self {
-            Type::Basic(name) => name.to_string(),
-            Type::Struct(struct_decl) => {
-                let tag_name = struct_decl.tag_name.to_owned().unwrap_or_default();
-                let members = struct_decl
-                    .members
-                    .iter()
-                    .map(|member| member.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                if members.is_empty() || !tag_name.is_empty() {
-                    format!("struct {}", tag_name)
-                } else {
-                    format!("struct {{{}}}", members)
-                }
-            }
-            Type::Pointer(ty) => format!("{}*", ty.type_name()),
-            Type::Array { type_dec, .. } => format!("{}[]", type_dec.type_name()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TypeTable {
-    entities: HashMap<String, Type>,
-    types: HashSet<Type>,
-}
-
-impl TypeTable {
-    fn new() -> TypeTable {
-        let entities = generate_c_types();
-        let mut types: HashSet<Type> = HashSet::new();
-        for value in entities.values() {
-            types.insert(value.clone());
-        }
-        TypeTable { entities, types }
-    }
-    fn put_struct(&mut self, ty: StructDecl) {
-        self.entities.insert(
-            ty.clone().tag_name.unwrap_or(Uuid::new_v4().to_string()),
-            Type::Struct(ty.clone()),
-        );
-        self.types.insert(Type::Struct(ty.clone()));
-    }
-    fn find_basic(&self, ty: String) -> Option<Type> {
-        self.types.get(&Type::Basic(ty)).cloned()
-    }
-    fn find_by_struct_ref(&self, struct_ref: StructRef) -> Option<Type> {
-        match struct_ref {
-            StructRef::TagName(name) => self.entities.get(&name.to_string()).cloned(),
-            StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl)),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Functions {
-    entities: HashMap<String, FunctionDecl>,
-}
-
-impl Functions {
-    fn new() -> Functions {
-        Functions {
-            entities: HashMap::new(),
-        }
-    }
-    fn put(&mut self, function: FunctionDecl) {
-        self.entities.insert(function.name.to_string(), function);
-    }
-    fn find(&self, name: &str) -> Option<FunctionDecl> {
-        self.entities.get(name).cloned()
-    }
-}
-
-#[derive(Debug)]
-struct LocalScope<'a> {
-    parent: Option<&'a LocalScope<'a>>,
-    entities: HashMap<String, TypeRef>,
-}
-
-impl<'a> LocalScope<'a> {
-    fn new(parent: Option<&'a LocalScope<'_>>) -> LocalScope<'a> {
-        LocalScope {
-            parent,
-            entities: HashMap::new(),
-        }
-    }
-    fn put(&mut self, name: &str, type_ref: TypeRef) {
-        self.entities.insert(name.to_string(), type_ref);
-    }
-
-    fn find(&self, name: &str) -> Option<TypeRef> {
-        self.entities
-            .get(name)
-            .cloned()
-            .or_else(|| self.parent.and_then(|p| p.find(name)))
-    }
-}
-
-#[derive(Debug)]
-struct Env<'a> {
-    type_table: &'a mut TypeTable,
-    functions: &'a mut Functions,
-    scope: LocalScope<'a>,
-}
-
-impl<'a> Env<'a> {
-    fn put_struct_type(&mut self, ty: StructDecl) {
-        self.type_table.put_struct(ty);
-    }
-
-    fn solve_type(&self, type_ref: &TypeRef, loc: &Loc) -> Result<Type> {
-        match type_ref {
-            TypeRef::Named(name) => {
-                self.type_table
-                    .find_basic(name.to_string())
-                    .ok_or(TypeError::new(
-                        loc,
-                        format!("variable type `{}` is not defined", type_ref.type_name()),
-                    ))
-            }
-            TypeRef::Pointer(type_ref) => self
-                .solve_type(type_ref, loc)
-                .map(|ty| Type::Pointer(Box::new(ty))),
-            TypeRef::Array { type_ref, size } => {
-                self.solve_type(type_ref, loc).map(|ty| Type::Array {
-                    type_dec: Box::new(ty),
-                    size: *size,
-                })
-            }
-            TypeRef::Struct(struct_ref) => self
-                .type_table
-                .find_by_struct_ref(struct_ref.clone())
-                .ok_or(TypeError::new(
-                    loc,
-                    format!("struct type `{}` is not defined", type_ref.type_name()),
-                )),
-        }
-    }
-
-    fn put_function(&mut self, function: FunctionDecl) {
-        self.functions.put(function);
-    }
-
-    fn find_function(&self, name: &str) -> Option<FunctionDecl> {
-        self.functions.find(name)
-    }
-
-    fn put_vardecl(&mut self, name: &str, type_ref: TypeRef) {
-        self.scope.put(name, type_ref);
-    }
-
-    fn find_vardecl(&self, name: &str) -> Option<TypeRef> {
-        self.scope.find(name)
-    }
-}
-
-pub fn check_type(ast: &Program) -> Result<()> {
-    let mut type_table = TypeTable::new();
-    let mut functions = Functions::new();
-    let global_scope = LocalScope::new(None);
-
+pub fn check_type(env: &Env, ast: &Program) -> Result<()> {
     let mut results: Vec<TypeError> = vec![];
-    let mut env = Env {
-        type_table: &mut type_table,
-        functions: &mut functions,
-        scope: global_scope,
-    };
 
     for item_node in &ast.external_item_nodes {
         let (item, external_item_loc) = item_node;
         match item {
             ExternalItem::StructDeclNode(struct_decl) => {
-                let StructDecl {
-                    tag_name: _,
-                    members,
-                } = struct_decl;
-                let es: Vec<TypeError> = members
-                    .iter()
-                    .filter_map(|member| env.solve_type(&member.type_ref, external_item_loc).err())
-                    .collect();
-                if !es.is_empty() {
-                    results.extend(es);
-                } else {
-                    env.put_struct_type(struct_decl.clone());
-                }
+                // NOP
             }
             ExternalItem::VarDeclNode(items) => {
-                for (type_ref, decl) in items {
-                    if let Err(e) = check_declarator(&env, type_ref, decl, external_item_loc) {
-                        results.push(e);
-                    } else {
-                        if let TypeRef::Struct(StructRef::Decl(struct_decl)) = type_ref.clone() {
-                            env.put_struct_type(struct_decl);
-                        }
-                        env.put_vardecl(decl.name.as_str(), type_ref.clone());
-                    }
-                }
+                // NOP
             }
             ExternalItem::FunctionDeclNode(function) => {
                 let FunctionDecl {
@@ -261,17 +59,18 @@ pub fn check_type(ast: &Program) -> Result<()> {
                     body,
                 } = function;
                 if let Err(e) = check_function_declaration(
-                    &mut env,
+                    env,
                     return_type_dec,
                     parameters,
                     body,
                     external_item_loc,
                 ) {
                     results.push(e);
-                } else {
-                    env.put_function(function.clone());
                 }
             }
+            ExternalItem::TypedefNode(type_ref, items) => {
+                // NOP
+            },
         }
     }
     if results.is_empty() {
@@ -282,12 +81,12 @@ pub fn check_type(ast: &Program) -> Result<()> {
     })
 }
 
-fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
+fn check_statement(env: &Env, scope: &Scope, stmt_node: &StatementNode) -> Vec<TypeError> {
     let mut results: Vec<TypeError> = vec![];
     let (stmt, stmt_loc) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
-            if let Err(e) = check_return_statement(env, expression) {
+            if let Err(e) = check_return_statement(env, scope, expression) {
                 results.push(e);
             }
         }
@@ -295,10 +94,11 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             // NOP
         }
         Statement::VarDecl(items) => {
-            results.append(&mut check_var_decl_statement(env, items, stmt_loc));
+            results.append(&mut check_var_decl_statement(env, scope, items, stmt_loc));
         }
         Statement::Block(statements) => {
-            results.append(&mut check_block_statement(env, statements));
+            let block_scope = env.scope_by_node(stmt_node).unwrap();
+            results.append(&mut check_block_statement(env, block_scope, statements));
         }
         Statement::If {
             condition,
@@ -307,6 +107,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
         } => {
             results.append(&mut check_if_statement(
                 env,
+                scope,
                 condition,
                 consequence,
                 alternative,
@@ -316,13 +117,13 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             condition,
             switch_block,
         } => {
-            results.append(&mut check_switch_statement(env, condition, switch_block));
+            results.append(&mut check_switch_statement(env, scope, condition, switch_block));
         }
         Statement::While { condition, body } => {
-            results.append(&mut check_while_statement(env, condition, body));
+            results.append(&mut check_while_statement(env, scope, condition, body));
         }
         Statement::DoWhile { body, condition } => {
-            results.append(&mut check_while_statement(env, condition, body));
+            results.append(&mut check_while_statement(env, scope, condition, body));
         }
         Statement::For {
             init,
@@ -330,63 +131,69 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             post,
             body,
         } => {
-            results.append(&mut check_for_statement(env, init, condition, post, body));
+            results.append(&mut check_for_statement(env, scope, init, condition, post, body));
         }
         Statement::ExpressionStatement(expression) => {
-            if let Err(e) = check_expression(env, expression) {
+            if let Err(e) = check_expression(env, scope, expression) {
                 results.push(e);
             }
         }
+        Statement::Typedef(type_ref, items) => todo!(),
     }
     results
 }
 
-fn check_return_statement(env: &mut Env, expression: &Option<(Expression, Loc)>) -> Result<Type> {
+fn check_return_statement(env: &Env, scope: &Scope, expression: &Option<(Expression, Loc)>) -> Result<Type> {
     if let Some(exp) = expression {
-        check_expression(env, exp)
+        check_expression(env, scope, exp)
     } else {
         Ok(Type::Basic("void".to_string()))
     }
 }
 
 fn check_var_decl_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &Scope,
     items: &Vec<(TypeRef, Declarator)>,
     loc: &Loc,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
     for (type_ref, decl) in items {
-        if let Err(e) = check_declarator(env, type_ref, decl, loc) {
+        if let Err(e) = check_declarator(env, scope, type_ref, decl, loc) {
             errors.push(e);
-        } else {
-            env.put_vardecl(&decl.name, type_ref.clone());
+        // } else {
+        //     env.put_vardecl(&decl.name, type_ref.clone());
         }
     }
     errors
 }
 
-fn check_block_statement(env: &mut Env, statements: &[StatementNode]) -> Vec<TypeError> {
+fn check_block_statement(env: &Env, scope: &Scope, statements: &[StatementNode]) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    let local_scope = LocalScope::new(Some(&env.scope));
-    let mut new_env = Env {
-        type_table: env.type_table,
-        functions: env.functions,
-        scope: local_scope,
-    };
+    // let local_scope = env.get_scope_by_node(node)
+    // let local_scope = LocalScope::new(Some(&env.scope));
+    // let mut new_env = Env {
+    //     type_table: env.type_table,
+    //     functions: env.functions,
+    //     scope: local_scope,
+    // };
     for stmt in statements {
-        errors.append(&mut check_statement(&mut new_env, stmt));
+        // let local_scope = env.scope_by_node(stmt).unwrap();
+        // errors.append(&mut check_statement(&mut new_env, stmt));
+        errors.append(&mut check_statement(env, scope, stmt));
     }
     errors
 }
 
 fn check_if_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &Scope,
     condition: &(Expression, Loc),
     consequence: &(Statement, Loc),
     alternative: &Option<Box<(Statement, Loc)>>,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             if condition_type.type_name() != "int" {
                 errors.push(TypeError::new(
@@ -397,9 +204,9 @@ fn check_if_statement(
                     ),
                 ));
             }
-            errors.extend(check_statement(env, consequence));
+            errors.extend(check_statement(env, scope, consequence));
             if let Some(alt_stmt) = alternative {
-                errors.extend(check_statement(env, alt_stmt));
+                errors.extend(check_statement(env, scope, alt_stmt));
             }
         }
         Err(e) => errors.push(e),
@@ -408,12 +215,13 @@ fn check_if_statement(
 }
 
 fn check_switch_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &Scope,
     condition: &(Expression, Loc),
     switch_block: &SwitchBlock,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             match condition_type.type_name().as_str() {
                 "int" | "char" | "short" | "long" => {
@@ -433,7 +241,7 @@ fn check_switch_statement(
             // condition_typeと全てのラベルの型が同じであることをチェック
             switch_block.label_entries.iter().flat_map(|entry| &entry.labels).for_each(|label| {
                 if let SwitchLabel::Case(label_exp) = label {
-                    match check_expression(env, label_exp) {
+                    match check_expression(env, scope, label_exp) {
                         Ok(label_ty) => {
                             if label_ty != condition_type {
                                 errors.push(TypeError::new(
@@ -452,7 +260,7 @@ fn check_switch_statement(
             });
             // bodyをチェック
             for stmt in &switch_block.body {
-                errors.extend(check_statement(env, stmt));
+                errors.extend(check_statement(env, scope, stmt));
             }
         }
         Err(e) => errors.push(e),
@@ -461,12 +269,13 @@ fn check_switch_statement(
 }
 
 fn check_while_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &Scope,
     condition: &(Expression, Loc),
     body: &(Statement, Loc),
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             if condition_type.type_name().as_str() != "int" {
                 errors.push(TypeError::new(
@@ -480,23 +289,24 @@ fn check_while_statement(
         }
         Err(e) => errors.push(e),
     }
-    errors.extend(check_statement(env, body));
+    errors.extend(check_statement(env, scope, body));
     errors
 }
 
 fn check_for_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &Scope,
     init: &Option<(Expression, Loc)>,
     condition: &Option<(Expression, Loc)>,
     post: &Option<(Expression, Loc)>,
     body: &(Statement, Loc),
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    if let Some(Err(e)) = init.as_ref().map(|exp| check_expression(env, exp)) {
+    if let Some(Err(e)) = init.as_ref().map(|exp| check_expression(env, scope, exp)) {
         errors.push(e);
     }
     if let Some(exp) = condition.as_ref() {
-        match check_expression(env, exp) {
+        match check_expression(env, scope, exp) {
             Ok(condition_type) => {
                 if condition_type.type_name().as_str() != "int" {
                     errors.push(TypeError::new(
@@ -511,14 +321,14 @@ fn check_for_statement(
             Err(e) => errors.push(e),
         }
     }
-    if let Some(Err(e)) = post.as_ref().map(|exp| check_expression(env, exp)) {
+    if let Some(Err(e)) = post.as_ref().map(|exp| check_expression(env, scope, exp)) {
         errors.push(e);
     }
-    errors.extend(check_statement(env, body));
+    errors.extend(check_statement(env, scope, body));
     errors
 }
 
-fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
+fn check_expression(env: &Env, scope: &Scope, exp_node: &ExpressionNode) -> Result<Type> {
     let (exp, exp_loc) = exp_node;
     match exp {
         Expression::Int(_) => Ok(Type::Basic("int".to_string())),
@@ -526,16 +336,16 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         Expression::StringLiteral(_) => {
             Ok(Type::Pointer(Box::new(Type::Basic("char".to_string()))))
         }
-        Expression::Identifier(name) => match env.find_vardecl(name) {
-            Some(type_ref) => env.solve_type(&type_ref, exp_loc),
+        Expression::Identifier(name) => match env.solve_type_by_name(scope, name) {
+            Some(ty) => Ok(ty),
             None => Err(TypeError::new(
                 exp_loc,
-                format!("variable `{}` is not defined", name),
+                format!("[type_checker] variable `{}` is not defined. {:?}", name, scope),
             )),
         },
         Expression::Prefix { operator, right } => match operator.as_str() {
             "!" | "-" | "++" | "--" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 if right_type.type_name() != "int" {
                     Err(TypeError::new(
                         &right.1,
@@ -550,7 +360,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 }
             }
             "*" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 let Type::Pointer(ty) = right_type else {
                     return Err(TypeError::new(
                         exp_loc,
@@ -563,7 +373,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 Ok(*ty)
             }
             "&" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 Ok(Type::Pointer(Box::new(right_type)))
             }
             _ => panic!(
@@ -577,14 +387,14 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
             right,
         } => match operator.as_str() {
             "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
-                check_basic_calc_operator(env, left, right)
+                check_basic_calc_operator(env, scope, left, right)
             }
             "." => {
-                let left_type = check_expression(env, left)?;
-                check_struct(env, left_type, &left.as_ref().1, right)
+                let left_type = check_expression(env, scope, left)?;
+                check_struct(env, scope, left_type, &left.as_ref().1, right)
             }
             "->" => {
-                let left_type = check_expression(env, left)?;
+                let left_type = check_expression(env, scope, left)?;
                 let Type::Pointer(ty) = left_type else {
                     return Err(TypeError::new(
                         &left.as_ref().1,
@@ -594,11 +404,11 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                         ),
                     ));
                 };
-                check_struct(env, *ty, &left.as_ref().1, right)
+                check_struct(env, scope, *ty, &left.as_ref().1, right)
             }
             _ => {
-                let left_type = check_expression(env, left)?;
-                let right_type = check_expression(env, right)?;
+                let left_type = check_expression(env, scope, left)?;
+                let right_type = check_expression(env, scope, right)?;
                 if left_type != right_type {
                     Err(TypeError::new(
                         &left.as_ref().1,
@@ -616,7 +426,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         },
         Expression::Postfix { operator, left } => match operator.as_str() {
             "++" | "--" => {
-                let left_type = check_expression(env, left)?;
+                let left_type = check_expression(env, scope, left)?;
                 if left_type.type_name() != "int" {
                     Err(TypeError::new(
                         &left.1,
@@ -655,15 +465,15 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 .parameters
                 .iter()
                 .map(|p| {
-                    env.solve_type(&p.type_ref, exp_loc).unwrap();
+                    env.solve_type(scope, &p.type_ref).unwrap();
                     &p.type_ref
                 })
                 .zip(arguments.iter())
                 .enumerate()
-                .flat_map(|(i, (param, arg))| match check_expression(env, arg) {
+                .flat_map(|(i, (param, arg))| match check_expression(env, scope, arg) {
                     Ok(arg_type) => {
                         let (_, loc) = arg;
-                        let Ok(param_type) = env.solve_type(param, loc) else {
+                        let Some(param_type) = env.solve_type(scope, param) else {
                             return vec![build_error_msg(
                                 loc,
                                 format!("type not defined. {}.", param.type_name()),
@@ -687,14 +497,18 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 })
                 .collect();
             if errors.is_empty() {
-                env.solve_type(&f.return_type_ref, exp_loc)
+                env.solve_type(scope, &f.return_type_ref)
+                    .ok_or(TypeError::new(
+                        exp_loc,
+                        format!("return type not defined. {:?}", f.return_type_ref),
+                    ))
             } else {
                 Err(TypeError { errors })
             }
         }
         Expression::Index { left, index } => {
             // as[x]の `x` の型がintであることをチェック
-            let index_type = check_expression(env, index)?;
+            let index_type = check_expression(env, scope, index)?;
             if index_type.type_name() != "int" {
                 return Err(TypeError::new(
                     &index.as_ref().1,
@@ -705,7 +519,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 ));
             }
             // as[x]の `as` の型を解決する
-            let var_type = check_expression(env, left)?;
+            let var_type = check_expression(env, scope, left)?;
             match var_type {
                 Type::Pointer(inner_type) => Ok(*inner_type),
                 Type::Array { type_dec, .. } => Ok(*type_dec),
@@ -725,41 +539,17 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
 }
 
 fn check_function_declaration(
-    env: &mut Env,
+    env: &Env,
     return_type_ref: &TypeRef,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
     loc: &Loc,
 ) -> Result<()> {
     let mut results: Vec<TypeError> = vec![];
-
-    env.solve_type(return_type_ref, loc)
-        .err()
-        .into_iter()
-        .for_each(|e| {
-            results.push(e);
-        });
-
-    let local_scope = LocalScope::new(Some(&env.scope));
-    let mut new_env = Env {
-        type_table: env.type_table,
-        functions: env.functions,
-        scope: local_scope,
-    };
-    for p in parameters {
-        new_env
-            .solve_type(&p.type_ref, loc)
-            .err()
-            .into_iter()
-            .for_each(|e| {
-                results.push(e);
-            });
-        new_env.put_vardecl(&p.name, p.type_ref.clone());
-    }
-
     if let Some(stmt) = body {
         // TODO: check `return_type_dec`
-        results.extend(check_statement(&mut new_env, stmt));
+        let scope = env.get_global_scope();
+        results.extend(check_statement(env, scope, stmt));
     }
     if results.is_empty() {
         return Ok(());
@@ -769,16 +559,17 @@ fn check_function_declaration(
     })
 }
 
-fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc) -> Result<Type> {
+fn check_declarator(env: &Env, scope: &Scope, type_ref: &TypeRef, decl: &Declarator, loc: &Loc) -> Result<Type> {
     let Some(exp) = &decl.value else {
-        return env.solve_type(type_ref, loc);
+        let res = env.solve_type(scope, type_ref);
+        return res.ok_or(TypeError::new(loc, "".to_string()))
     };
     let Expression::Initializer {
         elements: init_elms,
     } = &exp.0
     else {
         // 右辺が初期化子ではない場合のチェック
-        let var_type = check_expression(env, exp)?;
+        let var_type = check_expression(env, scope, exp)?;
         if type_ref.type_name() != var_type.type_name() {
             return Err(TypeError::new(
                 &exp.1,
@@ -789,12 +580,20 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 ),
             ));
         }
-        return env.solve_type(type_ref, &exp.1);
+        return env.solve_type(scope, type_ref)
+                   .ok_or(TypeError::new(
+                       &exp.1,
+                       format!("type not defined. {:?}", type_ref),
+                   ))
     };
     // 左辺の型情報（type_ref）を使って、右辺の初期化子をチェックする
     let loc = &exp.1;
     match type_ref {
-        TypeRef::Named(_) => env.solve_type(type_ref, loc),
+        TypeRef::Named(_) => env.solve_type(scope, type_ref)
+            .ok_or(TypeError::new(
+                loc,
+                format!("type not defined. {:?}", type_ref),
+            )),
         TypeRef::Pointer(_) => Err(TypeError::new(
             loc,
             "invalid initializer for pointer type".to_string(),
@@ -815,10 +614,10 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
             let errors: Vec<String> = init_elms
                 .iter()
                 .flat_map(|init_elm| {
-                    match check_expression(env, init_elm) {
+                    match check_expression(env, scope, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
-                            let Ok(ty) = env.solve_type(type_ref, init_elm_loc) else {
+                            let Some(ty) = env.solve_type(scope, type_ref) else {
                                 return vec![build_error_msg( init_elm_loc, format!( "type not defined. {}.", type_ref.type_name()))]
                             };
                             if ty != init_elm_ty {
@@ -834,14 +633,18 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                     }
                 }).collect();
             if errors.is_empty() {
-                env.solve_type(type_ref, loc)
+                env.solve_type(scope, type_ref)
+                    .ok_or(TypeError::new(
+                        loc,
+                        format!("type not defined. {:?}", type_ref),
+                    ))
             } else {
                 Err(TypeError { errors })
             }
         }
         TypeRef::Struct(struct_ref) => {
-            let tyopt: Option<Type> = match struct_ref {
-                StructRef::TagName(_) => env.solve_type(type_ref, loc).ok(),
+            let tyopt = match struct_ref {
+                StructRef::TagName(_) => env.solve_type(scope, type_ref),
                 StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl.clone())),
             };
             let Some(Type::Struct(struct_decl)) = tyopt else {
@@ -868,10 +671,10 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 .iter()
                 .zip(defined_members)
                 .flat_map(|(init_elm, decl)| {
-                    match check_expression(env, init_elm) {
+                    match check_expression(env, scope, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
-                            let Ok(ty) = env.solve_type(&decl.type_ref, init_elm_loc) else {
+                            let Some(ty) = env.solve_type(scope, &decl.type_ref) else {
                                 return vec![build_error_msg( init_elm_loc, format!( "type not defined. {}.", type_ref.type_name()))]
                             };
                             if ty != init_elm_ty {
@@ -892,16 +695,18 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 Err(TypeError { errors })
             }
         }
+        TypeRef::TypeAlias(type_ref) => todo!(),
     }
 }
 
 fn check_basic_calc_operator(
     env: &Env,
+    scope: &Scope,
     left: &ExpressionNode,
     right: &ExpressionNode,
 ) -> Result<Type> {
     let mut errors: Vec<String> = vec![];
-    let left_type = check_expression(env, left)?;
+    let left_type = check_expression(env, scope, left)?;
     if left_type.type_name() != "int" {
         let (_, loc) = left;
         errors.push(build_error_msg(
@@ -912,7 +717,7 @@ fn check_basic_calc_operator(
             ),
         ));
     }
-    let right_type = check_expression(env, right)?;
+    let right_type = check_expression(env, scope, right)?;
     if right_type.type_name() != "int" {
         let (_, loc) = right;
         errors.push(build_error_msg(
@@ -943,6 +748,7 @@ fn check_basic_calc_operator(
 
 fn check_struct(
     env: &Env,
+    scope: &Scope,
     left_type: Type,
     left_loc: &Loc,
     right: &ExpressionNode,
@@ -966,7 +772,11 @@ fn check_struct(
         ));
     };
     if let Some(defined) = defined_members.iter().find(|m| m.name == *operand_member) {
-        env.solve_type(&defined.type_ref, &right.1)
+        env.solve_type(scope, &defined.type_ref)
+            .ok_or(TypeError::new(
+                &right.1,
+                format!("type not defined. {:?}", &defined.type_ref),
+            ))
     } else {
         Err(TypeError::new(
             &right.1,
@@ -996,7 +806,7 @@ fn generate_c_types() -> HashMap<String, Type> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Lexer, parser::Parser};
+    use crate::{lexer::Lexer, parser::Parser, sema::scope_checker::{self, ScopeError}};
 
     use super::*;
 
@@ -1018,16 +828,19 @@ int inc(int a) {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let env = match scope_checker::check_scope(env, &ast) {
+            Ok(env) => env,
+            Err(e) => panic!("{:?}", e),
+        };
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 5);
+            assert_eq!(errors.len(), 1);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:2:9: type error. initialize variable type is"),
-                "actual message: `{}`",
-                errors[0]
+                errors[0],
+                "error:2:9: type error. initialize variable type is",
             );
             assert_eq!(
                 true,
@@ -1077,7 +890,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1140,7 +954,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors: _ }) = result.err() {
@@ -1188,7 +1003,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1249,7 +1065,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { .. }) = result.err() {
@@ -1288,7 +1105,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1333,7 +1151,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { .. }) = result.err() {
@@ -1369,7 +1188,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1427,7 +1247,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { .. }) = result.err() {
@@ -1466,7 +1287,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1507,7 +1329,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1569,7 +1392,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1612,7 +1436,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1692,7 +1517,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1726,14 +1552,21 @@ int main() {
     ys[&i] = 5;
     ys[ip] = 5;
 
-    int zs[4] = { 1, "bar", 3, aaa };
+    int zs[4] = { 1, "bar", 3 };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = &mut Env::new();
+        // println!("******* 111111 scopes: {:?}", env.scopes);
+        let env = match scope_checker::check_scope(env, &ast) {
+            Ok(env) => env,
+            Err(e) => panic!("{:?}", e),
+        };
+        // println!("******* 222222 scopes: {:?}", env.scopes);
+        let result = check_type(env, &ast);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1778,7 +1611,6 @@ int main() {
                 "error:22:22: type mismatched for initializer. left type is int, right type is char*",
                 errors[9]
             );
-            assert_eq!("error:22:32: variable `aaa` is not defined", errors[10]);
         } else {
             assert!(false);
         }
