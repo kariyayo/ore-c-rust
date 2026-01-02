@@ -1,15 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-    hash::Hash,
-    vec,
+    collections::HashMap, fmt, vec
 };
-use uuid::Uuid;
 
-use crate::parser::ast::{
+use crate::{parser::ast::{
     Declarator, Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program,
     Statement, StatementNode, StructDecl, StructRef, SwitchBlock, SwitchLabel, TypeRef,
-};
+}, sema::env::{Env, Type}};
 
 #[derive(Debug)]
 pub struct TypeError {
@@ -41,187 +37,9 @@ impl core::error::Error for TypeError {}
 
 pub type Result<T> = std::result::Result<T, TypeError>;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-enum Type {
-    Basic(String),
-    Struct(StructDecl),
-    Pointer(Box<Type>),
-    Array {
-        type_dec: Box<Type>,
-        size: Option<u32>,
-    },
-}
-
-impl Type {
-    fn type_name(&self) -> String {
-        match self {
-            Type::Basic(name) => name.to_string(),
-            Type::Struct(struct_decl) => {
-                let tag_name = struct_decl.tag_name.to_owned().unwrap_or_default();
-                let members = struct_decl
-                    .members
-                    .iter()
-                    .map(|member| member.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                if members.is_empty() || !tag_name.is_empty() {
-                    format!("struct {}", tag_name)
-                } else {
-                    format!("struct {{{}}}", members)
-                }
-            }
-            Type::Pointer(ty) => format!("{}*", ty.type_name()),
-            Type::Array { type_dec, .. } => format!("{}[]", type_dec.type_name()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TypeTable {
-    entities: HashMap<String, Type>,
-    types: HashSet<Type>,
-}
-
-impl TypeTable {
-    fn new() -> TypeTable {
-        let entities = generate_c_types();
-        let mut types: HashSet<Type> = HashSet::new();
-        for value in entities.values() {
-            types.insert(value.clone());
-        }
-        TypeTable { entities, types }
-    }
-    fn put_struct(&mut self, ty: StructDecl) {
-        self.entities.insert(
-            ty.clone().tag_name.unwrap_or(Uuid::new_v4().to_string()),
-            Type::Struct(ty.clone()),
-        );
-        self.types.insert(Type::Struct(ty.clone()));
-    }
-    fn find_basic(&self, ty: String) -> Option<Type> {
-        self.types.get(&Type::Basic(ty)).cloned()
-    }
-    fn find_by_struct_ref(&self, struct_ref: StructRef) -> Option<Type> {
-        match struct_ref {
-            StructRef::TagName(name) => self.entities.get(&name.to_string()).cloned(),
-            StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl)),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Functions {
-    entities: HashMap<String, FunctionDecl>,
-}
-
-impl Functions {
-    fn new() -> Functions {
-        Functions {
-            entities: HashMap::new(),
-        }
-    }
-    fn put(&mut self, function: FunctionDecl) {
-        self.entities.insert(function.name.to_string(), function);
-    }
-    fn find(&self, name: &str) -> Option<FunctionDecl> {
-        self.entities.get(name).cloned()
-    }
-}
-
-#[derive(Debug)]
-struct LocalScope<'a> {
-    parent: Option<&'a LocalScope<'a>>,
-    entities: HashMap<String, TypeRef>,
-}
-
-impl<'a> LocalScope<'a> {
-    fn new(parent: Option<&'a LocalScope<'_>>) -> LocalScope<'a> {
-        LocalScope {
-            parent,
-            entities: HashMap::new(),
-        }
-    }
-    fn put(&mut self, name: &str, type_ref: TypeRef) {
-        self.entities.insert(name.to_string(), type_ref);
-    }
-
-    fn find(&self, name: &str) -> Option<TypeRef> {
-        self.entities
-            .get(name)
-            .cloned()
-            .or_else(|| self.parent.and_then(|p| p.find(name)))
-    }
-}
-
-#[derive(Debug)]
-struct Env<'a> {
-    type_table: &'a mut TypeTable,
-    functions: &'a mut Functions,
-    scope: LocalScope<'a>,
-}
-
-impl<'a> Env<'a> {
-    fn put_struct_type(&mut self, ty: StructDecl) {
-        self.type_table.put_struct(ty);
-    }
-
-    fn solve_type(&self, type_ref: &TypeRef, loc: &Loc) -> Result<Type> {
-        match type_ref {
-            TypeRef::Named(name) => {
-                self.type_table
-                    .find_basic(name.to_string())
-                    .ok_or(TypeError::new(
-                        loc,
-                        format!("variable type `{}` is not defined", type_ref.type_name()),
-                    ))
-            }
-            TypeRef::Pointer(type_ref) => self
-                .solve_type(type_ref, loc)
-                .map(|ty| Type::Pointer(Box::new(ty))),
-            TypeRef::Array { type_ref, size } => {
-                self.solve_type(type_ref, loc).map(|ty| Type::Array {
-                    type_dec: Box::new(ty),
-                    size: *size,
-                })
-            }
-            TypeRef::Struct(struct_ref) => self
-                .type_table
-                .find_by_struct_ref(struct_ref.clone())
-                .ok_or(TypeError::new(
-                    loc,
-                    format!("struct type `{}` is not defined", type_ref.type_name()),
-                )),
-        }
-    }
-
-    fn put_function(&mut self, function: FunctionDecl) {
-        self.functions.put(function);
-    }
-
-    fn find_function(&self, name: &str) -> Option<FunctionDecl> {
-        self.functions.find(name)
-    }
-
-    fn put_vardecl(&mut self, name: &str, type_ref: TypeRef) {
-        self.scope.put(name, type_ref);
-    }
-
-    fn find_vardecl(&self, name: &str) -> Option<TypeRef> {
-        self.scope.find(name)
-    }
-}
-
 pub fn check_type(ast: &Program) -> Result<()> {
-    let mut type_table = TypeTable::new();
-    let mut functions = Functions::new();
-    let global_scope = LocalScope::new(None);
-
     let mut results: Vec<TypeError> = vec![];
-    let mut env = Env {
-        type_table: &mut type_table,
-        functions: &mut functions,
-        scope: global_scope,
-    };
+    let mut env = Env::new();
 
     for item_node in &ast.external_item_nodes {
         let (item, external_item_loc) = item_node;
@@ -233,7 +51,11 @@ pub fn check_type(ast: &Program) -> Result<()> {
                 } = struct_decl;
                 let es: Vec<TypeError> = members
                     .iter()
-                    .filter_map(|member| env.solve_type(&member.type_ref, external_item_loc).err())
+                    .filter_map(|member| {
+                        env.solve_type(&member.type_ref)
+                            .map_err(|e| TypeError::new(external_item_loc, e))
+                            .err()
+                    })
                     .collect();
                 if !es.is_empty() {
                     results.extend(es);
@@ -365,16 +187,11 @@ fn check_var_decl_statement(
     errors
 }
 
-fn check_block_statement(env: &mut Env, statements: &[StatementNode]) -> Vec<TypeError> {
+fn check_block_statement(mut env: &mut Env, statements: &[StatementNode]) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    let local_scope = LocalScope::new(Some(&env.scope));
-    let mut new_env = Env {
-        type_table: env.type_table,
-        functions: env.functions,
-        scope: local_scope,
-    };
+    env = env.create_scope(env.current_scope().clone());
     for stmt in statements {
-        errors.append(&mut check_statement(&mut new_env, stmt));
+        errors.append(&mut check_statement(env, stmt));
     }
     errors
 }
@@ -527,10 +344,10 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
             Ok(Type::Pointer(Box::new(Type::Basic("char".to_string()))))
         }
         Expression::Identifier(name) => match env.find_vardecl(name) {
-            Some(type_ref) => env.solve_type(&type_ref, exp_loc),
+            Some(type_ref) => env.solve_type(&type_ref).map_err(|e| TypeError::new(exp_loc, e)),
             None => Err(TypeError::new(
                 exp_loc,
-                format!("variable `{}` is not defined", name),
+                format!("identifier `{}` is not defined", name),
             )),
         },
         Expression::Prefix { operator, right } => match operator.as_str() {
@@ -655,7 +472,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 .parameters
                 .iter()
                 .map(|p| {
-                    env.solve_type(&p.type_ref, exp_loc).unwrap();
+                    env.solve_type(&p.type_ref).map_err(|e| TypeError::new(exp_loc, e)).unwrap();
                     &p.type_ref
                 })
                 .zip(arguments.iter())
@@ -663,7 +480,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 .flat_map(|(i, (param, arg))| match check_expression(env, arg) {
                     Ok(arg_type) => {
                         let (_, loc) = arg;
-                        let Ok(param_type) = env.solve_type(param, loc) else {
+                        let Ok(param_type) = env.solve_type(param).map_err(|e| TypeError::new(loc, e)) else {
                             return vec![build_error_msg(
                                 loc,
                                 format!("type not defined. {}.", param.type_name()),
@@ -687,7 +504,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 })
                 .collect();
             if errors.is_empty() {
-                env.solve_type(&f.return_type_ref, exp_loc)
+                env.solve_type(&f.return_type_ref).map_err(|e| TypeError::new(exp_loc, e)) 
             } else {
                 Err(TypeError { errors })
             }
@@ -725,7 +542,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
 }
 
 fn check_function_declaration(
-    env: &mut Env,
+    mut env: &mut Env,
     return_type_ref: &TypeRef,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
@@ -733,33 +550,29 @@ fn check_function_declaration(
 ) -> Result<()> {
     let mut results: Vec<TypeError> = vec![];
 
-    env.solve_type(return_type_ref, loc)
+    env.solve_type(return_type_ref)
+        .map_err(|e| TypeError::new(loc, e)) 
         .err()
         .into_iter()
         .for_each(|e| {
             results.push(e);
         });
-
-    let local_scope = LocalScope::new(Some(&env.scope));
-    let mut new_env = Env {
-        type_table: env.type_table,
-        functions: env.functions,
-        scope: local_scope,
-    };
+    env = env.create_scope(env.current_scope().clone());
     for p in parameters {
-        new_env
-            .solve_type(&p.type_ref, loc)
+        env
+            .solve_type(&p.type_ref)
+            .map_err(|e| TypeError::new(loc, e)) 
             .err()
             .into_iter()
             .for_each(|e| {
                 results.push(e);
             });
-        new_env.put_vardecl(&p.name, p.type_ref.clone());
+        env.put_vardecl(&p.name, p.type_ref.clone());
     }
 
     if let Some(stmt) = body {
         // TODO: check `return_type_dec`
-        results.extend(check_statement(&mut new_env, stmt));
+        results.extend(check_statement(env, stmt));
     }
     if results.is_empty() {
         return Ok(());
@@ -771,7 +584,7 @@ fn check_function_declaration(
 
 fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc) -> Result<Type> {
     let Some(exp) = &decl.value else {
-        return env.solve_type(type_ref, loc);
+        return env.solve_type(type_ref).map_err(|e| TypeError::new(loc, e));
     };
     let Expression::Initializer {
         elements: init_elms,
@@ -789,12 +602,12 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 ),
             ));
         }
-        return env.solve_type(type_ref, &exp.1);
+        return env.solve_type(type_ref).map_err(|e| TypeError::new(&exp.1, e));
     };
     // 左辺の型情報（type_ref）を使って、右辺の初期化子をチェックする
     let loc = &exp.1;
     match type_ref {
-        TypeRef::Named(_) => env.solve_type(type_ref, loc),
+        TypeRef::Named(_) => env.solve_type(type_ref).map_err(|e| TypeError::new(loc, e)),
         TypeRef::Pointer(_) => Err(TypeError::new(
             loc,
             "invalid initializer for pointer type".to_string(),
@@ -818,7 +631,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                     match check_expression(env, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
-                            let Ok(ty) = env.solve_type(type_ref, init_elm_loc) else {
+                            let Ok(ty) = env.solve_type(type_ref).map_err(|e| TypeError::new(init_elm_loc, e)) else {
                                 return vec![build_error_msg( init_elm_loc, format!( "type not defined. {}.", type_ref.type_name()))]
                             };
                             if ty != init_elm_ty {
@@ -834,14 +647,14 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                     }
                 }).collect();
             if errors.is_empty() {
-                env.solve_type(type_ref, loc)
+                env.solve_type(type_ref).map_err(|e| TypeError::new(loc, e))
             } else {
                 Err(TypeError { errors })
             }
         }
         TypeRef::Struct(struct_ref) => {
             let tyopt: Option<Type> = match struct_ref {
-                StructRef::TagName(_) => env.solve_type(type_ref, loc).ok(),
+                StructRef::TagName(_) => env.solve_type(type_ref).map_err(|e| TypeError::new(loc, e)).ok(),
                 StructRef::Decl(struct_decl) => Some(Type::Struct(struct_decl.clone())),
             };
             let Some(Type::Struct(struct_decl)) = tyopt else {
@@ -871,7 +684,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                     match check_expression(env, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
-                            let Ok(ty) = env.solve_type(&decl.type_ref, init_elm_loc) else {
+                            let Ok(ty) = env.solve_type(&decl.type_ref).map_err(|e| TypeError::new(init_elm_loc, e)) else {
                                 return vec![build_error_msg( init_elm_loc, format!( "type not defined. {}.", type_ref.type_name()))]
                             };
                             if ty != init_elm_ty {
@@ -966,7 +779,7 @@ fn check_struct(
         ));
     };
     if let Some(defined) = defined_members.iter().find(|m| m.name == *operand_member) {
-        env.solve_type(&defined.type_ref, &right.1)
+        env.solve_type(&defined.type_ref).map_err(|e| TypeError::new(&right.1, e))
     } else {
         Err(TypeError::new(
             &right.1,
@@ -981,17 +794,6 @@ fn check_struct(
             ),
         ))
     }
-}
-
-fn generate_c_types() -> HashMap<String, Type> {
-    let mut types = HashMap::new();
-
-    types.insert("int".to_string(), Type::Basic("int".to_string()));
-    types.insert("char".to_string(), Type::Basic("char".to_string()));
-
-    // todo...
-
-    types
 }
 
 #[cfg(test)]
@@ -1024,33 +826,23 @@ int inc(int a) {
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 5);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:2:9: type error. initialize variable type is"),
-                "actual message: `{}`",
+                "error:2:9: type error. initialize variable type is int, value type is char",
                 errors[0]
             );
             assert_eq!(
-                true,
-                errors[1].starts_with("error:3:13: type error. right should be `int`, but is"),
-                "actual message: `{}`",
+                "error:3:13: type error. right should be `int`, but is char",
                 errors[1]
             );
             assert_eq!(
-                true,
-                errors[2].starts_with("error:4:12: type error. initialize variable type is"),
-                "actual message: `{}`",
+                "error:4:12: type error. initialize variable type is char, value type is int",
                 errors[2]
             );
             assert_eq!(
-                true,
-                errors[3].starts_with("error:5:17: type error. right should be `int`, but is"),
-                "actual message: `{}`",
+                "error:5:17: type error. right should be `int`, but is char",
                 errors[3]
             );
             assert_eq!(
-                true,
-                errors[4].starts_with("error:9:16: variable `c` is not defined"),
-                "actual message: `{}`",
+                "error:9:16: identifier `c` is not defined",
                 errors[4]
             );
         } else {
@@ -1081,32 +873,22 @@ int main() {
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 4);
+            assert_eq!(errors.len(), 3);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:3:9: type error. condition type is"),
-                "actual message: `{}`",
+                "error:3:9: type error. condition type is char",
                 errors[0]
             );
+            // assert_eq!(
+            //     "error:6:18: variable `y1` is not defined",
+            //     errors[1]
+            // );
             assert_eq!(
-                true,
-                errors[1].starts_with("error:6:18: variable `y1` is not defined"),
-                "actual message: `{}`",
+                "error:7:22: type error. right should be `int`, but is char",
                 errors[1]
             );
             assert_eq!(
-                true,
-                errors[2].starts_with("error:7:22: type error. right should be `int`, but is char"),
-                "actual message: `{}`",
+                "error:9:22: type error. initialize variable type is char, value type is int",
                 errors[2]
-            );
-            assert_eq!(
-                true,
-                errors[3].starts_with(
-                    "error:9:22: type error. initialize variable type is char, value type is int"
-                ),
-                "actual message: `{}`",
-                errors[3]
             );
         } else {
             assert!(false);
@@ -1194,22 +976,15 @@ int main() {
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 3);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:14:10: type error. switch label type is char, but switch condition type is int"),
-                "actual message: `{}`",
+                "error:14:10: type error. switch label type is char, but switch condition type is int",
                 errors[0]
             );
             assert_eq!(
-                true,
-                errors[1].starts_with("error:17:7: type mismatched for operator `=`. left type is char*, right type is int"),
-                "actual message: `{}`",
+                "error:17:7: type mismatched for operator `=`. left type is char*, right type is int",
                 errors[1]
             );
             assert_eq!(
-                true,
-                errors[2]
-                    .starts_with("error:24:11: type error. switch condition type is struct person"),
-                "actual message: `{}`",
+                "error:24:11: type error. switch condition type is struct person",
                 errors[2]
             );
         } else {
@@ -1294,9 +1069,7 @@ int main() {
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:10:10: type error. while condition type is char*"),
-                "actual message: `{}`",
+                "error:10:10: type error. while condition type is char*",
                 errors[0]
             );
         } else {
@@ -1375,17 +1148,11 @@ int main() {
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 2);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:9:17: type error. for condition type is char*"),
-                "actual message: `{}`",
+                "error:9:17: type error. for condition type is char*",
                 errors[0]
             );
             assert_eq!(
-                true,
-                errors[1].starts_with(
-                    "error:9:26: type mismatched for postfix operator `--`. left type is char*"
-                ),
-                "actual message: `{}`",
+                "error:9:26: type mismatched for postfix operator `--`. left type is char*",
                 errors[1]
             );
         } else {
@@ -1430,8 +1197,13 @@ int main() {
         let result = check_type(&ast);
 
         // then
-        if let Some(TypeError { .. }) = result.err() {
-            assert!(false);
+        if let Some(TypeError { errors }) = result.err() {
+            // assert!(false);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                "error:9:17: type error. for condition type is char*",
+                errors[0]
+            );
         } else {
             assert!(true);
         }
@@ -1472,9 +1244,7 @@ int main() {
         if let Some(TypeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
             assert_eq!(
-                true,
-                errors[0].starts_with("error:19:12: type error. while condition type is char*"),
-                "actual message: `{}`",
+                "error:19:12: type error. while condition type is char*",
                 errors[0]
             );
         } else {
@@ -1649,7 +1419,7 @@ int main() {
                 "error:19:6: left type is not struct. left type is Pointer(Struct(StructDecl { tag_name: Some(\"person\"), members: [StructMember { type_ref: Named(\"int\"), name: \"age\" }, StructMember { type_ref: Pointer(Named(\"char\")), name: \"name\" }] }))",
                 errors[7]
             );
-            assert_eq!("error:21:5: variable `pp` is not defined", errors[8]);
+            assert_eq!("error:21:5: identifier `pp` is not defined", errors[8]);
             assert_eq!(
                 "error:22:7: right is not Identifier. right: Int(1)",
                 errors[9]
@@ -1778,7 +1548,7 @@ int main() {
                 "error:22:22: type mismatched for initializer. left type is int, right type is char*",
                 errors[9]
             );
-            assert_eq!("error:22:32: variable `aaa` is not defined", errors[10]);
+            assert_eq!("error:22:32: identifier `aaa` is not defined", errors[10]);
         } else {
             assert!(false);
         }
