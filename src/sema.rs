@@ -1,5 +1,6 @@
 use crate::parser::ast::Program;
 
+mod env;
 mod scope_checker;
 mod semantic_checker;
 mod type_checker;
