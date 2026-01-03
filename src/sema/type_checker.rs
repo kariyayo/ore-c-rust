@@ -85,6 +85,9 @@ pub fn check_type(ast: &Program, env: &Env) -> Result<()> {
                     results.push(e);
                 }
             }
+            ExternalItem::TypedefNode(type_ref, items) => {
+                // NOP
+            }
         }
     }
     if results.is_empty() {
@@ -108,6 +111,9 @@ fn check_statement(env: &Env, scope: &LocalScope, stmt_node: &StatementNode) -> 
         Statement::Break | Statement::Continue => {
             // NOP
         }
+        Statement::Typedef(type_ref, items) => {
+            // NOP
+        },
         Statement::VarDecl(items) => {
             results.append(&mut check_var_decl_statement(env, scope, items, stmt_loc));
         }
@@ -698,7 +704,11 @@ fn check_declarator(env: &Env, scope: &LocalScope, type_ref: &TypeRef, decl: &De
             } else {
                 Err(TypeError { errors })
             }
-        }
+        },
+        TypeRef::Typedef(_) => Err(TypeError::new(
+            loc,
+            "invalid initializer for typedef".to_string(),
+        )),
     }
 }
 

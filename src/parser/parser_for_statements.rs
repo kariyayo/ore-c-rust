@@ -11,6 +11,8 @@ impl Parser {
         match self.cur_token.token_type {
             TokenType::Return => self.parse_return_statement(),
             TokenType::Int | TokenType::Char | TokenType::Struct => self.parse_vardecl_statement(),
+            TokenType::Ident if self.peek_token.token_type == TokenType::Ident => self.parse_vardecl_statement(),
+            TokenType::TypeDef => self.parse_typedef_statement(),
             TokenType::Lbrace => self.parse_block_statement(),
             TokenType::If => self.parse_if_statement(),
             TokenType::Switch => self.parse_switch_statement(),
@@ -90,6 +92,40 @@ impl Parser {
             );
             Err(self.error(error_msg))
         }
+    }
+
+    fn parse_typedef_statement(&mut self) -> Result<StatementNode> {
+        self.next_token();
+        let ty =
+            if self.cur_token.token_type == TokenType::Struct {
+                let (tag_name, members) = self.parse_struct_type()?;
+                TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
+                    tag_name,
+                    members,
+                }))))
+            } else {
+                let t = TypeRef::Named(self.cur_token.literal());
+                self.next_token();
+                t
+            };
+        let mut aliases: Vec<String> = vec![];
+        loop {
+            if self.cur_token.token_type != TokenType::Ident {
+                return Err(self.error(format!(
+                    "[parse_typedef_statement] expected next token to be IDENT, got {:?}",
+                    self.cur_token.token_type
+                )));
+            }
+            let name = self.cur_token.literal();
+            aliases.push(name);
+
+            self.next_token();
+            if self.cur_token.token_type != TokenType::Comma {
+                break;
+            }
+            self.next_token();
+        }
+        return Ok((Statement::Typedef(ty, aliases), self.cur_token.loc()));
     }
 
     // { <statement>* }
@@ -521,6 +557,7 @@ struct { int a; int b; } p, q;
 struct point z;
 struct { int x; int y; } p = { 10, 20 };
 struct User a = { 1, 2 };
+point p1;
 ";
         let expected = vec![
             vec![("int", "five", Some("5"))],
@@ -536,6 +573,7 @@ struct User a = { 1, 2 };
             vec![("struct point", "z", None)],
             vec![("struct {\n    int x;\n    int y;\n}", "p", Some("{10, 20}"))],
             vec![("struct User", "a", Some("{1, 2}"))],
+            vec![("point", "p1", None)],
         ];
 
         // when
@@ -566,6 +604,43 @@ struct User a = { 1, 2 };
         }
     }
 
+    #[test]
+    fn test_typdef() {
+        // given
+        let input = "
+typedef int id;
+typedef int foo, bar;
+typedef struct { int name; } person;
+";
+        let expected = vec![
+            ("int", vec!["id"]),
+            ("int", vec!["foo", "bar"]),
+            ("typedef struct {\n    int name;\n}", vec!["person"]),
+        ];
+
+        // when
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<Statement> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_statement().map(|(item, _)| item).unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, stmt) in parse_results.iter().enumerate() {
+            match stmt {
+                Statement::Typedef(type_ref, aliases) => {
+                    let (expected_type, expected_aliases) = expected[row_num].clone();
+                    assert_eq!(type_ref.type_name(), expected_type);
+                    for (i, expected_alias) in expected_aliases.into_iter().enumerate() {
+                        assert_eq!(aliases[i], expected_alias);
+                    }
+                }
+                _ => panic!("Statement is not VarDecl"),
+            }
+        }
+    }
     #[test]
     fn test_return() {
         // given
