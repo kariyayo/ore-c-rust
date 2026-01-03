@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{parser::ast::{
     Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program, Statement, StatementNode, StructDecl, StructRef, TypeRef
-}, sema::env::{Env, Functions, LocalScope}};
+}, sema::env::{Env, Functions, LocalScope, Type}};
 
 #[derive(Debug)]
 pub struct ScopeError {
@@ -86,7 +86,10 @@ pub fn check_scope(ast: &Program) -> Result<Env> {
                 }
                 env.put_function(function.clone());
             }
-            _ => {}
+            ExternalItem::TypedefNode(type_ref, aliases) => {
+                let mut global_scope = env.get_global_scope().clone();
+                put_typedef(&mut env, &mut global_scope, type_ref, aliases);
+            },
         }
     }
 
@@ -139,9 +142,9 @@ fn check_function(
         env = env.create_scope(global_scope.clone(), stmt);
         let mut local_scope = env.scope_by_node(global_scope, stmt).clone();
         for p in parameters {
-            if local_scope.find(env, name).is_some() {
+            if local_scope.is_defined(p.name.as_str()) {
                 return vec![ScopeError {
-                    errors: vec![format!("parameter `{}` is duplicated", name)],
+                    errors: vec![format!("parameter `{}` is duplicated", p.name)],
                 }];
             }
             local_scope.put(env, p.name.as_str(), p.type_ref.clone());
@@ -152,6 +155,65 @@ fn check_function(
             .filter_map(|a| a.err())
             .collect();
         results.append(&mut es);
+    }
+    results
+}
+
+fn put_typedef(env: &mut Env, scope: &mut LocalScope, type_ref: &TypeRef, aliases: &Vec<String>) -> Vec<Result<()>> {
+    let TypeRef::Typedef(ty_ref) = type_ref else {
+        panic!("illegal argument, type_ref should be `TypeRef::Typedef`. type_ref: {:?}", type_ref);
+    };
+
+    let mut results: Vec<Result<()>> = vec![];
+
+    // type_refが登録済みの型かどうかをチェックする
+    let ty = match *ty_ref.clone() {
+        TypeRef::Named(..) => {
+            match env.solve_type(type_ref) {
+                Ok(t) => t,
+                Err(error_msg) => {
+                    results.push(Err(ScopeError { errors: vec![error_msg], }));
+                    return results;
+                },
+            }
+        }
+        TypeRef::Struct(struct_ref) => {
+            match struct_ref {
+                StructRef::TagName(..) => {
+                    match env.solve_type(type_ref) {
+                        Ok(t) => t,
+                        Err(error_msg) => {
+                            results.push(Err(ScopeError { errors: vec![error_msg], }));
+                            return results;
+                        },
+                    }
+                },
+                StructRef::Decl(struct_decl) => {
+                    env.put_struct_type(struct_decl.clone());
+                    Type::Struct(struct_decl)
+                },
+            }
+        },
+        _ => {
+            // TODO: not supported yet.
+            results.push(
+                Err(ScopeError { errors: vec![
+                    format!("not supported typedef other than `TypeRef::Named` and `TypeRef::Struct`. type_ref: {:?}", type_ref)
+                ]})
+            );
+            return results;
+        }
+    };
+
+    for alias in aliases {
+        if scope.is_defined(alias.as_str()) {
+            results.push(Err(ScopeError { errors: vec![format!("alias `{}` is duplicated", alias)] }));
+        } else {
+            scope.put(env, alias.as_str(), type_ref.clone());
+            if let Err(msg) = env.put_typedef(alias.as_str(), ty.clone()) {
+                results.push(Err(ScopeError { errors: vec![msg], }));
+            }
+        }
     }
     results
 }
@@ -177,13 +239,16 @@ fn check_statement(
         Statement::Continue => {
             vec![Ok(())]
         }
+        Statement::Typedef(type_ref, aliases) => {
+            put_typedef(env, scope, type_ref, aliases)
+        }
         Statement::VarDecl(items) => {
             let mut results: Vec<Result<()>> = vec![];
             for (type_ref, decl) in items {
                 if scope.is_defined(decl.name.as_str()) {
-                    results.push(Err(ScopeError {
-                        errors: vec![format!("variable `{}` is duplicated", decl.name)],
-                    }));
+                    results.push(Err(ScopeError { errors: vec![format!("variable `{}` is duplicated", decl.name)] }));
+                } else if let std::result::Result::Err(msg) = env.solve_type(type_ref) {
+                    results.push(Err(ScopeError { errors: vec![msg], }));
                 } else {
                     scope.put(env, decl.name.as_str(), type_ref.clone());
                 }
@@ -344,7 +409,7 @@ struct point {
     int x;
     int y;
 };
-struct rect foo(point p) {
+struct point foo(struct point p) {
     int p = 1; // duplicated
     struct point pp = {p.x + 10, p.y + 10};
     return pp;
@@ -377,7 +442,7 @@ struct point {
     int x;
     int y;
 };
-struct point foo(point p) {
+struct point foo(struct point p) {
     struct point pp = {p.x + 10, p.y + 10};
     if (a == 0) {
         ++(foo.x);
@@ -488,7 +553,7 @@ struct point {
     int x;
     int y;
 };
-struct point foo(point p) {
+struct point foo(struct point p) {
     bar(p);
 }
 ";
@@ -503,6 +568,73 @@ struct point foo(point p) {
             assert_eq!(errors.len(), 1);
             assert_eq!(
                 "function `bar` is not defined",
+                errors[0]
+            );
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_typedef_valid() {
+        // given
+        let input = "
+int x = 10;
+typedef struct point {
+    int x;
+    int y;
+} myp;
+myp foo(myp p) {
+    struct point pp = {p.x + 10, p.y + 10};
+    myp pp2 = {p.x + 10, p.y + 10};
+    return pp;
+}
+";
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_scope(&ast);
+
+        // then
+        if let Some(ScopeError { errors }) = result.err() {
+            // assert!(false);
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                "variable `p` is duplicated",
+                errors[0]
+            );
+        } else {
+            assert!(true);
+        }
+    }
+
+
+    #[test]
+    fn test_typedef_invalid() {
+        // given
+        let input = "
+int x = 10;
+typedef struct {
+    int x;
+    int y;
+} myp;
+int foo(myp p) {
+    struct point pp = {p.x + 10, p.y + 10};
+    return 0;
+}
+";
+        let mut parser = Parser::new(Lexer::new(input));
+        let ast = parser.parse_program();
+
+        // when
+        let result = check_scope(&ast);
+
+        // then
+        if let Some(ScopeError { errors }) = result.err() {
+            assert_eq!(errors.len(), 1);
+            assert_eq!(
+                "struct type `struct point` is not defined",
                 errors[0]
             );
         } else {

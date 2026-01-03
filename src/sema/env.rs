@@ -14,6 +14,10 @@ pub enum Type {
         type_dec: Box<Type>,
         size: Option<u32>,
     },
+    Typedef {
+        alias: String,
+        type_dec: Box<Type>,
+    },
 }
 
 impl Type {
@@ -36,10 +40,16 @@ impl Type {
             }
             Type::Pointer(ty) => format!("{}*", ty.type_name()),
             Type::Array { type_dec, .. } => format!("{}[]", type_dec.type_name()),
+            Type::Typedef { alias, type_dec } => format!("typedef {} {}", alias, type_dec.type_name()),
         }
     }
 }
 
+/// 型名と型定義の対応表
+/// 
+/// int -> int
+/// struct point -> struct point { x: int, y: int }
+/// typedef score -> int [10]
 #[derive(Debug)]
 struct TypeTable {
     entities: HashMap<String, Type>,
@@ -69,8 +79,19 @@ impl TypeTable {
         self.types.insert(Type::Struct(ty.clone()));
     }
 
-    fn find_basic(&self, ty: String) -> Option<Type> {
-        self.types.get(&Type::Basic(ty)).cloned()
+    fn put_typedef(&mut self, alias: &str, ty: Type) -> Result<(), String> {
+        let ty = Type::Typedef { alias: alias.to_string(), type_dec: Box::new(ty) };
+        if self.entities.contains_key(alias) {
+            return Err(format!("alias is already defined. alias: {}", alias))
+        };
+        self.entities.insert(alias.to_string(), ty.clone());
+        self.types.insert(ty.clone());
+        Ok(())
+    }
+
+    fn find_basic(&self, ty: &str) -> Option<Type> {
+        let ty = self.entities.get(ty);
+        ty.and_then(|t| self.types.get(t)).cloned()
     }
 
     fn find_by_struct_ref(&self, struct_ref: StructRef) -> Option<Type> {
@@ -109,16 +130,18 @@ pub struct LocalScope {
     // 親LocalScopeのid
     parent: Option<usize>,
 
+    /// シンボル名と型名を対応表
     entities: HashMap<String, TypeRef>,
 }
 
 impl LocalScope {
+    /// シンボル名と型名を登録する
     pub fn put(&mut self, env: &mut Env, name: &str, type_ref: TypeRef) {
         self.entities.insert(name.to_string(), type_ref);
         env.scopes.insert(self.id, self.clone());
     }
 
-    /// 名前 -> TypeRef
+    /// シンボル名 -> 型名（TypeRef）
     pub fn find(&self, env: &Env, name: &str) -> Option<TypeRef> {
         let mut scope_opt = Some(self);
         while let Some(scope) = scope_opt {
@@ -132,6 +155,7 @@ impl LocalScope {
         None
     }
 
+    /// シンボル名が存在しているかどうか
     pub fn is_defined(&self, name: &str) -> bool {
         self.entities.get(name).is_some()
     }
@@ -139,9 +163,17 @@ impl LocalScope {
 
 #[derive(Debug)]
 pub struct Env {
+    /// 型名と型定義の対応表
+    /// FIXME: TypeTableはLocalScopeが持つべきかも
     type_table: TypeTable,
+
+    /// 関数定義
     pub functions: Functions,
+
+    /// スコープIDとスコープの対応表
     scopes: HashMap<usize, LocalScope>,
+
+    /// ASTノードとスコープIDの対応表
     block_scope_table: HashMap<StatementNode, usize>,
 }
 
@@ -202,15 +234,12 @@ impl Env {
         }
     }
 
-    pub fn put_struct_type(&mut self, ty: StructDecl) {
-        self.type_table.put_struct(ty);
-    }
-
+    /// 型名を解決する（globalスコープ専用になってる）
     pub fn solve_type(&self, type_ref: &TypeRef) -> std::result::Result<Type, String> {
         match type_ref {
             TypeRef::Named(name) => {
                 self.type_table
-                    .find_basic(name.to_string())
+                    .find_basic(name)
                     .ok_or(
                         format!("variable type `{}` is not defined", type_ref.type_name()),
                     )
@@ -227,9 +256,10 @@ impl Env {
             TypeRef::Struct(struct_ref) => self
                 .type_table
                 .find_by_struct_ref(struct_ref.clone())
-                .ok_or(
-                    format!("struct type `{}` is not defined", type_ref.type_name()),
-                ),
+                .ok_or(format!("struct type `{}` is not defined", type_ref.type_name())),
+            TypeRef::Typedef(in_type_ref) => {
+                self.solve_type(in_type_ref)
+            }
         }
     }
 
@@ -241,6 +271,17 @@ impl Env {
         self.functions.find(name)
     }
 
+    /// structの型定義を追加する（globalスコープ専用になってる）
+    pub fn put_struct_type(&mut self, ty: StructDecl) {
+        self.type_table.put_struct(ty);
+    }
+
+    /// typedefを追加する（globalスコープ専用になってる）
+    pub fn put_typedef(&mut self, alias: &str, ty: Type) -> Result<(), String> {
+        self.type_table.put_typedef(alias, ty)
+    }
+
+    /// シンボル名（変数名）をグローバルスコープに追加する
     pub fn put_vardecl_to_global(&mut self, name: &str, type_ref: TypeRef) -> LocalScope {
         let scope = self.scopes.get(&0).unwrap();
         let mut new_scope = scope.clone();
@@ -249,6 +290,7 @@ impl Env {
         new_scope
     }
 
+    /// シンボル名（変数名）から型名（TypeRef）を取り出す
     pub fn find_vardecl(&self, scope: &LocalScope, name: &str) -> Option<TypeRef> {
         let mut scope_opt = Some(scope);
         while let Some(scope) = scope_opt {

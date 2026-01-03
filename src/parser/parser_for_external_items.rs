@@ -8,6 +8,33 @@ impl Parser {
         let mut struct_decl_node: Option<ExternalItemNode> = None;
         let mut struct_type_ref: Option<TypeRef> = None;
 
+        if self.cur_token.token_type == TokenType::TypeDef {
+            self.next_token();
+            let (tag_name, members) = self.parse_struct_type()?;
+            let ty =
+                    TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
+                        tag_name,
+                        members,
+                    }))));
+            let mut aliases: Vec<String> = vec![];
+            loop {
+                if self.cur_token.token_type != TokenType::Ident {
+                    return Err(self.error(format!(
+                        "[parse_external_item] expected next token to be IDENT, got {:?}",
+                        self.cur_token.token_type
+                    )));
+                }
+                let name = self.cur_token.literal();
+                aliases.push(name);
+
+                self.next_token();
+                if self.cur_token.token_type != TokenType::Comma {
+                    break;
+                }
+            }
+            return Ok((ExternalItem::TypedefNode(ty, aliases), self.cur_token.loc()));
+        }
+
         if self.cur_token.token_type == TokenType::Struct {
             let (tag_name, members) = self.parse_struct_type()?;
 
@@ -426,5 +453,66 @@ return x;
             e.errors[0],
             "error:3:1: [parse_external_item] expected external item token, got Return"
         );
+    }
+
+    #[test]
+    fn test_external_typedef() {
+        // given
+        let input = "
+typedef struct point {
+    int x;
+    int y;
+} point;
+typedef struct point_tag {
+    int x;
+    int y;
+} point;
+typedef struct {
+    int x;
+    int y;
+} point;
+";
+        let expected = vec![
+            ("struct", "int x; int y", Some("point"), Some("point")),
+            ("struct", "int x; int y", Some("point_tag"), Some("point")),
+            ("struct", "int x; int y", None, Some("point")),
+        ];
+
+        // when
+        let mut p = Parser::new(Lexer::new(input));
+        let mut parse_results: Vec<ExternalItem> = vec![];
+        for _ in 0..expected.len() {
+            parse_results.push(p.parse_external_item().map(|(item, _)| item).unwrap());
+            p.next_token();
+        }
+
+        // then
+        assert_eq!(parse_results.len(), expected.len());
+        for (row_num, item) in parse_results.iter().enumerate() {
+            let (_, expected_members, expected_tag_name, expected_alias) = expected[row_num];
+            match item {
+                ExternalItem::TypedefNode(TypeRef::Typedef(type_ref), names) => {
+                    let TypeRef::Struct(StructRef::Decl(StructDecl { tag_name, members })) =
+                        *type_ref.clone()
+                    else {
+                        panic!("type_ref is not Struct. type_ref: {:?}", type_ref);
+                    };
+                    assert_eq!(
+                        tag_name.as_ref().unwrap_or(&"".to_string()),
+                        expected_tag_name.unwrap_or("")
+                    );
+                    assert_eq!(
+                        members
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<String>>()
+                            .join("; "),
+                        expected_members.to_string()
+                    );
+                    assert_eq!(names[0], expected_alias.unwrap().to_string());
+                }
+                _ => panic!("item is not VarDeclNode. item: {:?}", item),
+            }
+        }
     }
 }

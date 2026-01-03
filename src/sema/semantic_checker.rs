@@ -125,6 +125,7 @@ fn check_statement(ctx: &Context, stmt_node: &StatementNode) -> Vec<Result<()>> 
                     | Statement::Return(_)
                     | Statement::Break
                     | Statement::Continue
+                    | Statement::Typedef(..)
                     | Statement::VarDecl(_)
                     | Statement::Block(_)
                     | Statement::If { .. }
@@ -139,6 +140,9 @@ fn check_statement(ctx: &Context, stmt_node: &StatementNode) -> Vec<Result<()>> 
                     "invalid `continue` in here".to_string(),
                 ))]
             }
+        }
+        Statement::Typedef(..) => {
+            vec![Ok(())]
         }
         Statement::VarDecl(..) => {
             vec![Ok(())]
