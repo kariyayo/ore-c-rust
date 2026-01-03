@@ -333,6 +333,7 @@ p->x;
 a && b;
 a || b;
 
+typedef struct b {} c;
 ";
         let tests = vec![
             // (TokenType, "literal", row, col)
@@ -522,6 +523,13 @@ a || b;
             (TokenType::Or, "||", 60, 3),
             (TokenType::Ident, "b", 60, 6),
             (TokenType::Semicolon, ";", 60, 7),
+            (TokenType::TypeDef, "typedef", 62, 1),
+            (TokenType::Struct, "struct", 62, 9),
+            (TokenType::Ident, "b", 62, 16),
+            (TokenType::Lbrace, "{", 62, 18),
+            (TokenType::Rbrace, "}", 62, 19),
+            (TokenType::Ident, "c", 62, 21),
+            (TokenType::Semicolon, ";", 62, 22),
         ];
 
         let mut l = Lexer::new(input);

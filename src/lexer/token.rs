@@ -66,6 +66,7 @@ pub enum TokenType {
     Continue,
     Return,
     Struct,
+    TypeDef,
 }
 
 pub fn lookup_ident(s: &str) -> TokenType {
@@ -86,6 +87,7 @@ pub fn lookup_ident(s: &str) -> TokenType {
         "break" => TokenType::Break,
         "continue" => TokenType::Continue,
         "struct" => TokenType::Struct,
+        "typedef" => TokenType::TypeDef,
         _ => TokenType::Ident,
     }
 }
