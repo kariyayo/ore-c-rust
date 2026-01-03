@@ -3,7 +3,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::parser::ast::{ FunctionDecl, StructDecl, StructRef, TypeRef };
+use crate::parser::ast::{ FunctionDecl, StatementNode, StructDecl, StructRef, TypeRef };
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
@@ -41,13 +41,13 @@ impl Type {
 }
 
 #[derive(Debug)]
-pub struct TypeTable {
+struct TypeTable {
     entities: HashMap<String, Type>,
     types: HashSet<Type>,
 }
 
 impl TypeTable {
-    pub fn new() -> TypeTable {
+    fn new() -> TypeTable {
         let entities = generate_c_types();
         let mut types: HashSet<Type> = HashSet::new();
         for value in entities.values() {
@@ -131,13 +131,18 @@ impl LocalScope {
         }
         None
     }
+
+    pub fn is_defined(&self, name: &str) -> bool {
+        self.entities.get(name).is_some()
+    }
 }
 
 #[derive(Debug)]
 pub struct Env {
-    pub type_table: TypeTable,
+    type_table: TypeTable,
     pub functions: Functions,
-    pub scopes: HashMap<usize, LocalScope>,
+    scopes: HashMap<usize, LocalScope>,
+    block_scope_table: HashMap<StatementNode, usize>,
 }
 
 impl Env {
@@ -155,36 +160,46 @@ impl Env {
             type_table: type_table,
             functions: functions,
             scopes: scopes,
+            block_scope_table: HashMap::new(),
         }
     }
 
-    pub fn create_scope(&mut self, parent: LocalScope) -> &mut Env {
+    pub fn create_scope(&mut self, parent: LocalScope, node: &StatementNode) -> &mut Env {
         let parent_id = parent.id;
-        let next_id = parent_id + 1;
+        let next_id = self.scopes.len();
 
-        let s = LocalScope {
-            id: next_id,
-            parent: Some(parent_id),
-            entities: HashMap::new(),
-        };
-        self.scopes.insert(next_id, s);
+        let new_scope =
+            if let Some(sid) = self.block_scope_table.get(node) {
+                let es = self.scopes.get(sid).map(|s| s.entities.clone());
+                LocalScope {
+                    id: next_id,
+                    parent: Some(parent_id),
+                    entities: es.unwrap_or_default(),
+                }
+            } else {
+                LocalScope {
+                    id: next_id,
+                    parent: Some(parent_id),
+                    entities: HashMap::new(),
+                }
+            };
+
+        self.scopes.insert(next_id, new_scope);
+        self.block_scope_table.insert(node.clone(), next_id);
         self
     }
 
-    // TODO: dummy
-    pub fn pop_scope(&mut self) -> LocalScope {
-        let k = self.scopes.keys().max().unwrap();
-        self.scopes.get(k).unwrap().clone()
+    pub fn get_global_scope(&self) -> &LocalScope {
+        self.scopes.get(&0).unwrap()
     }
 
-    pub fn scope(&self, scope_id: usize) -> &LocalScope {
-        self.scopes.get(&scope_id).unwrap()
-    }
-
-    // TODO: dummy
-    pub fn current_scope(&self) -> &LocalScope {
-        let k = self.scopes.keys().max().unwrap();
-        self.scopes.get(k).unwrap()
+    /// ASTノードからScopeを取り出す
+    pub fn scope_by_node<'a>(&'a self, scope: &'a LocalScope, node: &StatementNode) -> &'a LocalScope {
+        if let Some(scope_id) = self.block_scope_table.get(node) {
+            self.scopes.get(scope_id).unwrap()
+        } else {
+            scope
+        }
     }
 
     pub fn put_struct_type(&mut self, ty: StructDecl) {
@@ -226,16 +241,16 @@ impl Env {
         self.functions.find(name)
     }
 
-    pub fn put_vardecl(&mut self, name: &str, type_ref: TypeRef) -> LocalScope {
-        let scope = self.current_scope();
+    pub fn put_vardecl_to_global(&mut self, name: &str, type_ref: TypeRef) -> LocalScope {
+        let scope = self.scopes.get(&0).unwrap();
         let mut new_scope = scope.clone();
         new_scope.put(self, name, type_ref);
         self.scopes.insert(new_scope.id, new_scope.clone());
         new_scope
     }
 
-    pub fn find_vardecl(&self, name: &str) -> Option<TypeRef> {
-        let mut scope_opt = Some(self.current_scope());
+    pub fn find_vardecl(&self, scope: &LocalScope, name: &str) -> Option<TypeRef> {
+        let mut scope_opt = Some(scope);
         while let Some(scope) = scope_opt {
             let res = scope.find(self, name);
             if res.is_some() {

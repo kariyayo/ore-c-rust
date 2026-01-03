@@ -31,7 +31,7 @@ impl core::error::Error for ScopeError {}
 
 pub type Result<T> = std::result::Result<T, ScopeError>;
 
-pub fn check_scope(ast: &Program) -> Result<()> {
+pub fn check_scope(ast: &Program) -> Result<Env> {
     let mut results: Vec<ScopeError> = vec![];
     let mut env = Env::new();
 
@@ -65,14 +65,14 @@ pub fn check_scope(ast: &Program) -> Result<()> {
                         if let TypeRef::Struct(StructRef::Decl(struct_decl)) = type_ref.clone() {
                             env.put_struct_type(struct_decl);
                         }
-                        env.put_vardecl(decl.name.as_str(), type_ref.clone());
+                        env.put_vardecl_to_global(decl.name.as_str(), type_ref.clone());
                     }
                 }
             }
             ExternalItem::FunctionDeclNode(function) => {
                 let FunctionDecl {
                     return_type_ref,
-                    name,
+                    name: _,
                     parameters,
                     body: _,
                 } = function;
@@ -90,8 +90,6 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         }
     }
 
-    println!("=================@@@@ check_function env: {:?}", &env);
-
     let results: Vec<ScopeError> = ast
         .external_item_nodes
         .iter()
@@ -104,7 +102,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
                 body,
             }) = item {
                 let fs = &env.functions.clone();
-                let s = &env.scope(0).clone();
+                let s = &env.get_global_scope().clone();
                 Some(check_function(
                     &mut env,
                     fs,
@@ -120,7 +118,7 @@ pub fn check_scope(ast: &Program) -> Result<()> {
         .flatten()
         .collect();
     if results.is_empty() {
-        return Ok(());
+        return Ok(env);
     }
     Err(ScopeError {
         errors: results.iter().flat_map(|e| e.errors.clone()).collect(),
@@ -136,21 +134,19 @@ fn check_function(
     body: &Option<Box<StatementNode>>,
 ) -> Vec<ScopeError> {
     let mut results: Vec<ScopeError> = vec![];
-
-    // check parameters
-    env = env.create_scope(global_scope.clone());
-    let mut local_scope = env.pop_scope();
-    for p in parameters {
-        if local_scope.find(env, name).is_some() {
-            return vec![ScopeError {
-                errors: vec![format!("parameter `{}` is duplicated", name)],
-            }];
-        }
-        local_scope.put(env, p.name.as_str(), p.type_ref.clone());
-    }
-
-    // check function body
     if let Some(stmt) = body {
+        // check parameters
+        env = env.create_scope(global_scope.clone(), stmt);
+        let mut local_scope = env.scope_by_node(global_scope, stmt).clone();
+        for p in parameters {
+            if local_scope.find(env, name).is_some() {
+                return vec![ScopeError {
+                    errors: vec![format!("parameter `{}` is duplicated", name)],
+                }];
+            }
+            local_scope.put(env, p.name.as_str(), p.type_ref.clone());
+        }
+        // check function body
         let mut es: Vec<ScopeError> = check_statement(env, functions, &mut local_scope, stmt)
             .into_iter()
             .filter_map(|a| a.err())
@@ -166,7 +162,6 @@ fn check_statement(
     scope: &mut LocalScope,
     stmt_node: &StatementNode,
 ) -> Vec<Result<()>> {
-    println!("@@@@ check_statement ::: local_scope: {:?}", scope);
     let (stmt, _) = stmt_node;
     match stmt {
         Statement::Return(expression) => {
@@ -185,7 +180,7 @@ fn check_statement(
         Statement::VarDecl(items) => {
             let mut results: Vec<Result<()>> = vec![];
             for (type_ref, decl) in items {
-                if scope.find(env, decl.name.as_str()).is_some() {
+                if scope.is_defined(decl.name.as_str()) {
                     results.push(Err(ScopeError {
                         errors: vec![format!("variable `{}` is duplicated", decl.name)],
                     }));
@@ -199,8 +194,8 @@ fn check_statement(
             results
         }
         Statement::Block(statements) => {
-            env = env.create_scope(scope.clone());
-            let mut local_scope = env.pop_scope();
+            env = env.create_scope(scope.clone(), stmt_node);
+            let mut local_scope = env.scope_by_node(scope, stmt_node).clone();
             statements
                 .iter()
                 .flat_map(|stmt| check_statement(env, functions, &mut local_scope, stmt))

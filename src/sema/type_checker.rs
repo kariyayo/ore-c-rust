@@ -1,11 +1,9 @@
-use std::{
-    collections::HashMap, fmt, vec
-};
+use std::{ fmt, vec };
 
 use crate::{parser::ast::{
     Declarator, Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program,
     Statement, StatementNode, StructDecl, StructRef, SwitchBlock, SwitchLabel, TypeRef,
-}, sema::env::{Env, Type}};
+}, sema::env::{Env, LocalScope, Type}};
 
 #[derive(Debug)]
 pub struct TypeError {
@@ -37,9 +35,8 @@ impl core::error::Error for TypeError {}
 
 pub type Result<T> = std::result::Result<T, TypeError>;
 
-pub fn check_type(ast: &Program) -> Result<()> {
+pub fn check_type(ast: &Program, env: &Env) -> Result<()> {
     let mut results: Vec<TypeError> = vec![];
-    let mut env = Env::new();
 
     for item_node in &ast.external_item_nodes {
         let (item, external_item_loc) = item_node;
@@ -59,19 +56,13 @@ pub fn check_type(ast: &Program) -> Result<()> {
                     .collect();
                 if !es.is_empty() {
                     results.extend(es);
-                } else {
-                    env.put_struct_type(struct_decl.clone());
                 }
             }
             ExternalItem::VarDeclNode(items) => {
+                let global_scope = env.get_global_scope();
                 for (type_ref, decl) in items {
-                    if let Err(e) = check_declarator(&env, type_ref, decl, external_item_loc) {
+                    if let Err(e) = check_declarator(&env, global_scope, type_ref, decl, external_item_loc) {
                         results.push(e);
-                    } else {
-                        if let TypeRef::Struct(StructRef::Decl(struct_decl)) = type_ref.clone() {
-                            env.put_struct_type(struct_decl);
-                        }
-                        env.put_vardecl(decl.name.as_str(), type_ref.clone());
                     }
                 }
             }
@@ -82,16 +73,16 @@ pub fn check_type(ast: &Program) -> Result<()> {
                     parameters,
                     body,
                 } = function;
+                let global_scope = env.get_global_scope();
                 if let Err(e) = check_function_declaration(
-                    &mut env,
+                    env,
+                    global_scope,
                     return_type_dec,
                     parameters,
                     body,
                     external_item_loc,
                 ) {
                     results.push(e);
-                } else {
-                    env.put_function(function.clone());
                 }
             }
         }
@@ -104,12 +95,13 @@ pub fn check_type(ast: &Program) -> Result<()> {
     })
 }
 
-fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
+fn check_statement(env: &Env, scope: &LocalScope, stmt_node: &StatementNode) -> Vec<TypeError> {
     let mut results: Vec<TypeError> = vec![];
     let (stmt, stmt_loc) = stmt_node;
+    let scope = env.scope_by_node(scope, stmt_node);
     match stmt {
         Statement::Return(expression) => {
-            if let Err(e) = check_return_statement(env, expression) {
+            if let Err(e) = check_return_statement(env, scope, expression) {
                 results.push(e);
             }
         }
@@ -117,10 +109,10 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             // NOP
         }
         Statement::VarDecl(items) => {
-            results.append(&mut check_var_decl_statement(env, items, stmt_loc));
+            results.append(&mut check_var_decl_statement(env, scope, items, stmt_loc));
         }
         Statement::Block(statements) => {
-            results.append(&mut check_block_statement(env, statements));
+            results.append(&mut check_block_statement(env, scope, statements));
         }
         Statement::If {
             condition,
@@ -129,6 +121,7 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
         } => {
             results.append(&mut check_if_statement(
                 env,
+                scope,
                 condition,
                 consequence,
                 alternative,
@@ -138,13 +131,13 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             condition,
             switch_block,
         } => {
-            results.append(&mut check_switch_statement(env, condition, switch_block));
+            results.append(&mut check_switch_statement(env, scope, condition, switch_block));
         }
         Statement::While { condition, body } => {
-            results.append(&mut check_while_statement(env, condition, body));
+            results.append(&mut check_while_statement(env, scope, condition, body));
         }
         Statement::DoWhile { body, condition } => {
-            results.append(&mut check_while_statement(env, condition, body));
+            results.append(&mut check_while_statement(env, scope, condition, body));
         }
         Statement::For {
             init,
@@ -152,10 +145,10 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
             post,
             body,
         } => {
-            results.append(&mut check_for_statement(env, init, condition, post, body));
+            results.append(&mut check_for_statement(env, scope, init, condition, post, body));
         }
         Statement::ExpressionStatement(expression) => {
-            if let Err(e) = check_expression(env, expression) {
+            if let Err(e) = check_expression(env, scope, expression) {
                 results.push(e);
             }
         }
@@ -163,47 +156,46 @@ fn check_statement(env: &mut Env, stmt_node: &StatementNode) -> Vec<TypeError> {
     results
 }
 
-fn check_return_statement(env: &mut Env, expression: &Option<(Expression, Loc)>) -> Result<Type> {
+fn check_return_statement(env: &Env, scope: &LocalScope, expression: &Option<(Expression, Loc)>) -> Result<Type> {
     if let Some(exp) = expression {
-        check_expression(env, exp)
+        check_expression(env, scope, exp)
     } else {
         Ok(Type::Basic("void".to_string()))
     }
 }
 
 fn check_var_decl_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     items: &Vec<(TypeRef, Declarator)>,
     loc: &Loc,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
     for (type_ref, decl) in items {
-        if let Err(e) = check_declarator(env, type_ref, decl, loc) {
+        if let Err(e) = check_declarator(env, scope, type_ref, decl, loc) {
             errors.push(e);
-        } else {
-            env.put_vardecl(&decl.name, type_ref.clone());
         }
     }
     errors
 }
 
-fn check_block_statement(mut env: &mut Env, statements: &[StatementNode]) -> Vec<TypeError> {
+fn check_block_statement(env: &Env, scope: &LocalScope, statements: &[StatementNode]) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    env = env.create_scope(env.current_scope().clone());
     for stmt in statements {
-        errors.append(&mut check_statement(env, stmt));
+        errors.append(&mut check_statement(env, scope, stmt));
     }
     errors
 }
 
 fn check_if_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     condition: &(Expression, Loc),
     consequence: &(Statement, Loc),
     alternative: &Option<Box<(Statement, Loc)>>,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             if condition_type.type_name() != "int" {
                 errors.push(TypeError::new(
@@ -214,9 +206,9 @@ fn check_if_statement(
                     ),
                 ));
             }
-            errors.extend(check_statement(env, consequence));
+            errors.extend(check_statement(env, scope, consequence));
             if let Some(alt_stmt) = alternative {
-                errors.extend(check_statement(env, alt_stmt));
+                errors.extend(check_statement(env, scope, alt_stmt));
             }
         }
         Err(e) => errors.push(e),
@@ -225,12 +217,13 @@ fn check_if_statement(
 }
 
 fn check_switch_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     condition: &(Expression, Loc),
     switch_block: &SwitchBlock,
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             match condition_type.type_name().as_str() {
                 "int" | "char" | "short" | "long" => {
@@ -250,7 +243,7 @@ fn check_switch_statement(
             // condition_typeと全てのラベルの型が同じであることをチェック
             switch_block.label_entries.iter().flat_map(|entry| &entry.labels).for_each(|label| {
                 if let SwitchLabel::Case(label_exp) = label {
-                    match check_expression(env, label_exp) {
+                    match check_expression(env, scope, label_exp) {
                         Ok(label_ty) => {
                             if label_ty != condition_type {
                                 errors.push(TypeError::new(
@@ -269,7 +262,7 @@ fn check_switch_statement(
             });
             // bodyをチェック
             for stmt in &switch_block.body {
-                errors.extend(check_statement(env, stmt));
+                errors.extend(check_statement(env, scope, stmt));
             }
         }
         Err(e) => errors.push(e),
@@ -278,12 +271,13 @@ fn check_switch_statement(
 }
 
 fn check_while_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     condition: &(Expression, Loc),
     body: &(Statement, Loc),
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    match check_expression(env, condition) {
+    match check_expression(env, scope, condition) {
         Ok(condition_type) => {
             if condition_type.type_name().as_str() != "int" {
                 errors.push(TypeError::new(
@@ -297,23 +291,24 @@ fn check_while_statement(
         }
         Err(e) => errors.push(e),
     }
-    errors.extend(check_statement(env, body));
+    errors.extend(check_statement(env, scope, body));
     errors
 }
 
 fn check_for_statement(
-    env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     init: &Option<(Expression, Loc)>,
     condition: &Option<(Expression, Loc)>,
     post: &Option<(Expression, Loc)>,
     body: &(Statement, Loc),
 ) -> Vec<TypeError> {
     let mut errors: Vec<TypeError> = vec![];
-    if let Some(Err(e)) = init.as_ref().map(|exp| check_expression(env, exp)) {
+    if let Some(Err(e)) = init.as_ref().map(|exp| check_expression(env, scope, exp)) {
         errors.push(e);
     }
     if let Some(exp) = condition.as_ref() {
-        match check_expression(env, exp) {
+        match check_expression(env, scope, exp) {
             Ok(condition_type) => {
                 if condition_type.type_name().as_str() != "int" {
                     errors.push(TypeError::new(
@@ -328,14 +323,14 @@ fn check_for_statement(
             Err(e) => errors.push(e),
         }
     }
-    if let Some(Err(e)) = post.as_ref().map(|exp| check_expression(env, exp)) {
+    if let Some(Err(e)) = post.as_ref().map(|exp| check_expression(env, scope, exp)) {
         errors.push(e);
     }
-    errors.extend(check_statement(env, body));
+    errors.extend(check_statement(env, scope, body));
     errors
 }
 
-fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
+fn check_expression(env: &Env, scope: &LocalScope, exp_node: &ExpressionNode) -> Result<Type> {
     let (exp, exp_loc) = exp_node;
     match exp {
         Expression::Int(_) => Ok(Type::Basic("int".to_string())),
@@ -343,7 +338,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         Expression::StringLiteral(_) => {
             Ok(Type::Pointer(Box::new(Type::Basic("char".to_string()))))
         }
-        Expression::Identifier(name) => match env.find_vardecl(name) {
+        Expression::Identifier(name) => match env.find_vardecl(scope, name) {
             Some(type_ref) => env.solve_type(&type_ref).map_err(|e| TypeError::new(exp_loc, e)),
             None => Err(TypeError::new(
                 exp_loc,
@@ -352,7 +347,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         },
         Expression::Prefix { operator, right } => match operator.as_str() {
             "!" | "-" | "++" | "--" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 if right_type.type_name() != "int" {
                     Err(TypeError::new(
                         &right.1,
@@ -367,7 +362,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 }
             }
             "*" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 let Type::Pointer(ty) = right_type else {
                     return Err(TypeError::new(
                         exp_loc,
@@ -380,7 +375,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 Ok(*ty)
             }
             "&" => {
-                let right_type = check_expression(env, right)?;
+                let right_type = check_expression(env, scope, right)?;
                 Ok(Type::Pointer(Box::new(right_type)))
             }
             _ => panic!(
@@ -394,14 +389,14 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
             right,
         } => match operator.as_str() {
             "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">=" | "==" | "!=" => {
-                check_basic_calc_operator(env, left, right)
+                check_basic_calc_operator(env, scope, left, right)
             }
             "." => {
-                let left_type = check_expression(env, left)?;
+                let left_type = check_expression(env, scope, left)?;
                 check_struct(env, left_type, &left.as_ref().1, right)
             }
             "->" => {
-                let left_type = check_expression(env, left)?;
+                let left_type = check_expression(env, scope, left)?;
                 let Type::Pointer(ty) = left_type else {
                     return Err(TypeError::new(
                         &left.as_ref().1,
@@ -414,8 +409,8 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 check_struct(env, *ty, &left.as_ref().1, right)
             }
             _ => {
-                let left_type = check_expression(env, left)?;
-                let right_type = check_expression(env, right)?;
+                let left_type = check_expression(env, scope, left)?;
+                let right_type = check_expression(env, scope, right)?;
                 if left_type != right_type {
                     Err(TypeError::new(
                         &left.as_ref().1,
@@ -433,7 +428,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         },
         Expression::Postfix { operator, left } => match operator.as_str() {
             "++" | "--" => {
-                let left_type = check_expression(env, left)?;
+                let left_type = check_expression(env, scope, left)?;
                 if left_type.type_name() != "int" {
                     Err(TypeError::new(
                         &left.1,
@@ -477,7 +472,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 })
                 .zip(arguments.iter())
                 .enumerate()
-                .flat_map(|(i, (param, arg))| match check_expression(env, arg) {
+                .flat_map(|(i, (param, arg))| match check_expression(env, scope, arg) {
                     Ok(arg_type) => {
                         let (_, loc) = arg;
                         let Ok(param_type) = env.solve_type(param).map_err(|e| TypeError::new(loc, e)) else {
@@ -511,7 +506,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
         }
         Expression::Index { left, index } => {
             // as[x]の `x` の型がintであることをチェック
-            let index_type = check_expression(env, index)?;
+            let index_type = check_expression(env, scope, index)?;
             if index_type.type_name() != "int" {
                 return Err(TypeError::new(
                     &index.as_ref().1,
@@ -522,7 +517,7 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
                 ));
             }
             // as[x]の `as` の型を解決する
-            let var_type = check_expression(env, left)?;
+            let var_type = check_expression(env, scope, left)?;
             match var_type {
                 Type::Pointer(inner_type) => Ok(*inner_type),
                 Type::Array { type_dec, .. } => Ok(*type_dec),
@@ -542,7 +537,8 @@ fn check_expression(env: &Env, exp_node: &ExpressionNode) -> Result<Type> {
 }
 
 fn check_function_declaration(
-    mut env: &mut Env,
+    env: &Env,
+    scope: &LocalScope,
     return_type_ref: &TypeRef,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
@@ -557,7 +553,6 @@ fn check_function_declaration(
         .for_each(|e| {
             results.push(e);
         });
-    env = env.create_scope(env.current_scope().clone());
     for p in parameters {
         env
             .solve_type(&p.type_ref)
@@ -567,12 +562,11 @@ fn check_function_declaration(
             .for_each(|e| {
                 results.push(e);
             });
-        env.put_vardecl(&p.name, p.type_ref.clone());
     }
 
     if let Some(stmt) = body {
         // TODO: check `return_type_dec`
-        results.extend(check_statement(env, stmt));
+        results.extend(check_statement(env, scope, stmt));
     }
     if results.is_empty() {
         return Ok(());
@@ -582,7 +576,7 @@ fn check_function_declaration(
     })
 }
 
-fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc) -> Result<Type> {
+fn check_declarator(env: &Env, scope: &LocalScope, type_ref: &TypeRef, decl: &Declarator, loc: &Loc) -> Result<Type> {
     let Some(exp) = &decl.value else {
         return env.solve_type(type_ref).map_err(|e| TypeError::new(loc, e));
     };
@@ -591,7 +585,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
     } = &exp.0
     else {
         // 右辺が初期化子ではない場合のチェック
-        let var_type = check_expression(env, exp)?;
+        let var_type = check_expression(env, scope, exp)?;
         if type_ref.type_name() != var_type.type_name() {
             return Err(TypeError::new(
                 &exp.1,
@@ -628,7 +622,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
             let errors: Vec<String> = init_elms
                 .iter()
                 .flat_map(|init_elm| {
-                    match check_expression(env, init_elm) {
+                    match check_expression(env, scope, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
                             let Ok(ty) = env.solve_type(type_ref).map_err(|e| TypeError::new(init_elm_loc, e)) else {
@@ -681,7 +675,7 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
                 .iter()
                 .zip(defined_members)
                 .flat_map(|(init_elm, decl)| {
-                    match check_expression(env, init_elm) {
+                    match check_expression(env, scope, init_elm) {
                         Ok(init_elm_ty) => {
                             let (_, init_elm_loc) = init_elm;
                             let Ok(ty) = env.solve_type(&decl.type_ref).map_err(|e| TypeError::new(init_elm_loc, e)) else {
@@ -710,11 +704,12 @@ fn check_declarator(env: &Env, type_ref: &TypeRef, decl: &Declarator, loc: &Loc)
 
 fn check_basic_calc_operator(
     env: &Env,
+    scope: &LocalScope,
     left: &ExpressionNode,
     right: &ExpressionNode,
 ) -> Result<Type> {
     let mut errors: Vec<String> = vec![];
-    let left_type = check_expression(env, left)?;
+    let left_type = check_expression(env, scope, left)?;
     if left_type.type_name() != "int" {
         let (_, loc) = left;
         errors.push(build_error_msg(
@@ -725,7 +720,7 @@ fn check_basic_calc_operator(
             ),
         ));
     }
-    let right_type = check_expression(env, right)?;
+    let right_type = check_expression(env, scope, right)?;
     if right_type.type_name() != "int" {
         let (_, loc) = right;
         errors.push(build_error_msg(
@@ -798,7 +793,7 @@ fn check_struct(
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Lexer, parser::Parser};
+    use crate::{lexer::Lexer, parser::Parser, sema::scope_checker::check_scope};
 
     use super::*;
 
@@ -820,7 +815,8 @@ int inc(int a) {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -842,7 +838,7 @@ int inc(int a) {
                 errors[3]
             );
             assert_eq!(
-                "error:9:16: identifier `c` is not defined",
+                "error:9:16: type error. right should be `int`, but is char",
                 errors[4]
             );
         } else {
@@ -858,7 +854,6 @@ int main() {
     if ('a') {
         int y1 = 1 + 2;
     } else {
-        int y2 = y1;
         int y3 = 1 + 'a';
         int y4 = 1 + 2;
         char yy = y4 + 2;
@@ -869,7 +864,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -883,11 +879,11 @@ int main() {
             //     errors[1]
             // );
             assert_eq!(
-                "error:7:22: type error. right should be `int`, but is char",
+                "error:6:22: type error. right should be `int`, but is char",
                 errors[1]
             );
             assert_eq!(
-                "error:9:22: type error. initialize variable type is char, value type is int",
+                "error:8:22: type error. initialize variable type is char, value type is int",
                 errors[2]
             );
         } else {
@@ -922,7 +918,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors: _ }) = result.err() {
@@ -970,7 +967,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1024,7 +1022,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { .. }) = result.err() {
@@ -1063,7 +1062,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1106,7 +1106,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { .. }) = result.err() {
@@ -1142,7 +1143,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1194,7 +1196,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1238,7 +1241,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1261,7 +1265,6 @@ int inc(int a) {
 }
 int main() {
     int x1 = 1;
-    int x2 = random();
 
     char y1 = inc(x1);
     char y2;
@@ -1277,26 +1280,26 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 6);
-            assert_eq!("error:7:20: function `random` is not defined", errors[0]);
+            assert_eq!(errors.len(), 5);
             assert_eq!(
-                "error:9:18: type error. initialize variable type is char, value type is int",
+                "error:8:18: type error. initialize variable type is char, value type is int",
+                errors[0]
+            );
+            assert_eq!(
+                "error:10:5: type mismatched for operator `=`. left type is char, right type is int",
                 errors[1]
             );
+            assert_eq!("error:12:17: wrong number of arguments, `inc`.", errors[2]);
             assert_eq!(
-                "error:11:5: type mismatched for operator `=`. left type is char, right type is int",
-                errors[2]
+                "error:13:18: mismatched type for argument 1 in function call, `inc`.",
+                errors[3]
             );
-            assert_eq!("error:13:17: wrong number of arguments, `inc`.", errors[3]);
-            assert_eq!(
-                "error:14:18: mismatched type for argument 1 in function call, `inc`.",
-                errors[4]
-            );
-            assert_eq!("error:15:17: wrong number of arguments, `inc`.", errors[5]);
+            assert_eq!("error:14:17: wrong number of arguments, `inc`.", errors[4]);
         } else {
             assert!(false);
         }
@@ -1339,7 +1342,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1372,7 +1376,6 @@ int main() {
     (*(&p)).namee = s;
     (&p).name = s;
 
-    pp.age = 10;
     p.1 = 10;
 
     struct person p2 = { "Dave", 30 };
@@ -1382,11 +1385,12 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 12);
+            assert_eq!(errors.len(), 11);
             assert_eq!(
                 "error:9:6: type mismatched for operator `=`. left type is int, right type is char*",
                 errors[0]
@@ -1419,18 +1423,17 @@ int main() {
                 "error:19:6: left type is not struct. left type is Pointer(Struct(StructDecl { tag_name: Some(\"person\"), members: [StructMember { type_ref: Named(\"int\"), name: \"age\" }, StructMember { type_ref: Pointer(Named(\"char\")), name: \"name\" }] }))",
                 errors[7]
             );
-            assert_eq!("error:21:5: identifier `pp` is not defined", errors[8]);
             assert_eq!(
-                "error:22:7: right is not Identifier. right: Int(1)",
+                "error:21:7: right is not Identifier. right: Int(1)",
+                errors[8]
+            );
+            assert_eq!(
+                "error:23:26: type mismatched for initializer. left type is int, right type is char*",
                 errors[9]
             );
             assert_eq!(
-                "error:24:26: type mismatched for initializer. left type is int, right type is char*",
+                "error:23:34: type mismatched for initializer. left type is char*, right type is int",
                 errors[10]
-            );
-            assert_eq!(
-                "error:24:34: type mismatched for initializer. left type is char*, right type is int",
-                errors[11]
             );
         } else {
             assert!(false);
@@ -1462,7 +1465,8 @@ int main() {
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
@@ -1496,18 +1500,19 @@ int main() {
     ys[&i] = 5;
     ys[ip] = 5;
 
-    int zs[4] = { 1, "bar", 3, aaa };
+    int zs[3] = { 1, "bar", 3 };
 }
 "#;
         let mut parser = Parser::new(Lexer::new(input));
         let ast = parser.parse_program();
 
         // when
-        let result = check_type(&ast);
+        let env = check_scope(&ast).unwrap();
+        let result = check_type(&ast, &env);
 
         // then
         if let Some(TypeError { errors }) = result.err() {
-            assert_eq!(errors.len(), 11);
+            assert_eq!(errors.len(), 10);
             assert_eq!(
                 "error:4:7: type mismatched for operator `=`. left type is int, right type is char*",
                 errors[0]
@@ -1548,7 +1553,6 @@ int main() {
                 "error:22:22: type mismatched for initializer. left type is int, right type is char*",
                 errors[9]
             );
-            assert_eq!("error:22:32: identifier `aaa` is not defined", errors[10]);
         } else {
             assert!(false);
         }

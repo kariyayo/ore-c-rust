@@ -136,7 +136,7 @@ pub enum ExternalItem {
 /// 文を表すノード
 pub type StatementNode = (Statement, Loc);
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Statement {
     Return(Option<ExpressionNode>),
     Break,
@@ -170,7 +170,7 @@ pub enum Statement {
     ExpressionStatement(ExpressionNode),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Declarator {
     pub name: String,
     pub value: Option<ExpressionNode>,
@@ -202,19 +202,19 @@ pub struct Declarator {
 ///     ],
 /// }
 ///
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct SwitchBlock {
     pub label_entries: Vec<SwitchLabelEntry>,
     pub body: Vec<StatementNode>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct SwitchLabelEntry {
     pub labels: Vec<SwitchLabel>,
     pub start_index: i32,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SwitchLabel {
     Case(ExpressionNode),
     Default,
