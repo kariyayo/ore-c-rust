@@ -1,9 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet}, hash::Hash
+    collections::{HashMap, HashSet},
+    hash::Hash,
 };
 use uuid::Uuid;
 
-use crate::parser::ast::{ FunctionDecl, StatementNode, StructDecl, StructRef, TypeRef };
+use crate::parser::ast::{FunctionDecl, StatementNode, StructDecl, StructRef, TypeRef};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
@@ -40,13 +41,15 @@ impl Type {
             }
             Type::Pointer(ty) => format!("{}*", ty.type_name()),
             Type::Array { type_dec, .. } => format!("{}[]", type_dec.type_name()),
-            Type::Typedef { alias, type_dec } => format!("typedef {} {}", alias, type_dec.type_name()),
+            Type::Typedef { alias, type_dec } => {
+                format!("typedef {} {}", alias, type_dec.type_name())
+            }
         }
     }
 }
 
 /// 型名と型定義の対応表
-/// 
+///
 /// int -> int
 /// struct point -> struct point { x: int, y: int }
 /// typedef score -> int [10]
@@ -72,17 +75,17 @@ impl TypeTable {
         } else {
             Uuid::new_v4().to_string()
         };
-        self.entities.insert(
-            name,
-            Type::Struct(ty.clone()),
-        );
+        self.entities.insert(name, Type::Struct(ty.clone()));
         self.types.insert(Type::Struct(ty.clone()));
     }
 
     fn put_typedef(&mut self, alias: &str, ty: Type) -> Result<(), String> {
-        let ty = Type::Typedef { alias: alias.to_string(), type_dec: Box::new(ty) };
+        let ty = Type::Typedef {
+            alias: alias.to_string(),
+            type_dec: Box::new(ty),
+        };
         if self.entities.contains_key(alias) {
-            return Err(format!("alias is already defined. alias: {}", alias))
+            return Err(format!("alias is already defined. alias: {}", alias));
         };
         self.entities.insert(alias.to_string(), ty.clone());
         self.types.insert(ty.clone());
@@ -145,12 +148,12 @@ impl LocalScope {
     pub fn find(&self, env: &Env, name: &str) -> Option<TypeRef> {
         let mut scope_opt = Some(self);
         while let Some(scope) = scope_opt {
-            if let Some(type_ref) = scope.entities 
-                .get(name)
-                .cloned() {
-                    return Some(type_ref);
-                };
-            scope_opt = scope.parent.and_then(|parent_id| env.scopes.get(&parent_id))
+            if let Some(type_ref) = scope.entities.get(name).cloned() {
+                return Some(type_ref);
+            };
+            scope_opt = scope
+                .parent
+                .and_then(|parent_id| env.scopes.get(&parent_id))
         }
         None
     }
@@ -200,21 +203,20 @@ impl Env {
         let parent_id = parent.id;
         let next_id = self.scopes.len();
 
-        let new_scope =
-            if let Some(sid) = self.block_scope_table.get(node) {
-                let es = self.scopes.get(sid).map(|s| s.entities.clone());
-                LocalScope {
-                    id: next_id,
-                    parent: Some(parent_id),
-                    entities: es.unwrap_or_default(),
-                }
-            } else {
-                LocalScope {
-                    id: next_id,
-                    parent: Some(parent_id),
-                    entities: HashMap::new(),
-                }
-            };
+        let new_scope = if let Some(sid) = self.block_scope_table.get(node) {
+            let es = self.scopes.get(sid).map(|s| s.entities.clone());
+            LocalScope {
+                id: next_id,
+                parent: Some(parent_id),
+                entities: es.unwrap_or_default(),
+            }
+        } else {
+            LocalScope {
+                id: next_id,
+                parent: Some(parent_id),
+                entities: HashMap::new(),
+            }
+        };
 
         self.scopes.insert(next_id, new_scope);
         self.block_scope_table.insert(node.clone(), next_id);
@@ -226,7 +228,11 @@ impl Env {
     }
 
     /// ASTノードからScopeを取り出す
-    pub fn scope_by_node<'a>(&'a self, scope: &'a LocalScope, node: &StatementNode) -> &'a LocalScope {
+    pub fn scope_by_node<'a>(
+        &'a self,
+        scope: &'a LocalScope,
+        node: &StatementNode,
+    ) -> &'a LocalScope {
         if let Some(scope_id) = self.block_scope_table.get(node) {
             self.scopes.get(scope_id).unwrap()
         } else {
@@ -237,29 +243,25 @@ impl Env {
     /// 型名を解決する（globalスコープ専用になってる）
     pub fn solve_type(&self, type_ref: &TypeRef) -> std::result::Result<Type, String> {
         match type_ref {
-            TypeRef::Named(name) => {
-                self.type_table
-                    .find_basic(name)
-                    .ok_or(
-                        format!("variable type `{}` is not defined", type_ref.type_name()),
-                    )
-            }
+            TypeRef::Named(name) => self.type_table.find_basic(name).ok_or(format!(
+                "variable type `{}` is not defined",
+                type_ref.type_name()
+            )),
             TypeRef::Pointer(type_ref) => self
                 .solve_type(type_ref)
                 .map(|ty| Type::Pointer(Box::new(ty))),
-            TypeRef::Array { type_ref, size } => {
-                self.solve_type(type_ref).map(|ty| Type::Array {
-                    type_dec: Box::new(ty),
-                    size: *size,
-                })
-            }
+            TypeRef::Array { type_ref, size } => self.solve_type(type_ref).map(|ty| Type::Array {
+                type_dec: Box::new(ty),
+                size: *size,
+            }),
             TypeRef::Struct(struct_ref) => self
                 .type_table
                 .find_by_struct_ref(struct_ref.clone())
-                .ok_or(format!("struct type `{}` is not defined", type_ref.type_name())),
-            TypeRef::Typedef(in_type_ref) => {
-                self.solve_type(in_type_ref)
-            }
+                .ok_or(format!(
+                    "struct type `{}` is not defined",
+                    type_ref.type_name()
+                )),
+            TypeRef::Typedef(in_type_ref) => self.solve_type(in_type_ref),
         }
     }
 
@@ -298,7 +300,9 @@ impl Env {
             if res.is_some() {
                 return res;
             }
-            scope_opt = scope.parent.and_then(|parent_id| self.scopes.get(&parent_id))
+            scope_opt = scope
+                .parent
+                .and_then(|parent_id| self.scopes.get(&parent_id))
         }
         None
     }

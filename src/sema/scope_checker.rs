@@ -1,8 +1,12 @@
 use std::fmt;
 
-use crate::{parser::ast::{
-    Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program, Statement, StatementNode, StructDecl, StructRef, TypeRef
-}, sema::env::{Env, Functions, LocalScope, Type}};
+use crate::{
+    parser::ast::{
+        Expression, ExpressionNode, ExternalItem, FunctionDecl, Loc, Parameter, Program, Statement,
+        StatementNode, StructDecl, StructRef, TypeRef,
+    },
+    sema::env::{Env, Functions, LocalScope, Type},
+};
 
 #[derive(Debug)]
 pub struct ScopeError {
@@ -89,7 +93,7 @@ pub fn check_scope(ast: &Program) -> Result<Env> {
             ExternalItem::TypedefNode(type_ref, aliases) => {
                 let mut global_scope = env.get_global_scope().clone();
                 put_typedef(&mut env, &mut global_scope, type_ref, aliases);
-            },
+            }
         }
     }
 
@@ -103,17 +107,11 @@ pub fn check_scope(ast: &Program) -> Result<Env> {
                 name,
                 parameters,
                 body,
-            }) = item {
+            }) = item
+            {
                 let fs = &env.functions.clone();
                 let s = &env.get_global_scope().clone();
-                Some(check_function(
-                    &mut env,
-                    fs,
-                    s,
-                    name,
-                    parameters,
-                    body,
-                ))
+                Some(check_function(&mut env, fs, s, name, parameters, body))
             } else {
                 None
             }
@@ -159,39 +157,45 @@ fn check_function(
     results
 }
 
-fn put_typedef(env: &mut Env, scope: &mut LocalScope, type_ref: &TypeRef, aliases: &Vec<String>) -> Vec<Result<()>> {
+fn put_typedef(
+    env: &mut Env,
+    scope: &mut LocalScope,
+    type_ref: &TypeRef,
+    aliases: &Vec<String>,
+) -> Vec<Result<()>> {
     let TypeRef::Typedef(ty_ref) = type_ref else {
-        panic!("illegal argument, type_ref should be `TypeRef::Typedef`. type_ref: {:?}", type_ref);
+        panic!(
+            "illegal argument, type_ref should be `TypeRef::Typedef`. type_ref: {:?}",
+            type_ref
+        );
     };
 
     let mut results: Vec<Result<()>> = vec![];
 
     // type_refが登録済みの型かどうかをチェックする
     let ty = match *ty_ref.clone() {
-        TypeRef::Named(..) => {
-            match env.solve_type(type_ref) {
+        TypeRef::Named(..) => match env.solve_type(type_ref) {
+            Ok(t) => t,
+            Err(error_msg) => {
+                results.push(Err(ScopeError {
+                    errors: vec![error_msg],
+                }));
+                return results;
+            }
+        },
+        TypeRef::Struct(struct_ref) => match struct_ref {
+            StructRef::TagName(..) => match env.solve_type(type_ref) {
                 Ok(t) => t,
                 Err(error_msg) => {
-                    results.push(Err(ScopeError { errors: vec![error_msg], }));
+                    results.push(Err(ScopeError {
+                        errors: vec![error_msg],
+                    }));
                     return results;
-                },
-            }
-        }
-        TypeRef::Struct(struct_ref) => {
-            match struct_ref {
-                StructRef::TagName(..) => {
-                    match env.solve_type(type_ref) {
-                        Ok(t) => t,
-                        Err(error_msg) => {
-                            results.push(Err(ScopeError { errors: vec![error_msg], }));
-                            return results;
-                        },
-                    }
-                },
-                StructRef::Decl(struct_decl) => {
-                    env.put_struct_type(struct_decl.clone());
-                    Type::Struct(struct_decl)
-                },
+                }
+            },
+            StructRef::Decl(struct_decl) => {
+                env.put_struct_type(struct_decl.clone());
+                Type::Struct(struct_decl)
             }
         },
         _ => {
@@ -207,11 +211,13 @@ fn put_typedef(env: &mut Env, scope: &mut LocalScope, type_ref: &TypeRef, aliase
 
     for alias in aliases {
         if scope.is_defined(alias.as_str()) {
-            results.push(Err(ScopeError { errors: vec![format!("alias `{}` is duplicated", alias)] }));
+            results.push(Err(ScopeError {
+                errors: vec![format!("alias `{}` is duplicated", alias)],
+            }));
         } else {
             scope.put(env, alias.as_str(), type_ref.clone());
             if let Err(msg) = env.put_typedef(alias.as_str(), ty.clone()) {
-                results.push(Err(ScopeError { errors: vec![msg], }));
+                results.push(Err(ScopeError { errors: vec![msg] }));
             }
         }
     }
@@ -239,16 +245,16 @@ fn check_statement(
         Statement::Continue => {
             vec![Ok(())]
         }
-        Statement::Typedef(type_ref, aliases) => {
-            put_typedef(env, scope, type_ref, aliases)
-        }
+        Statement::Typedef(type_ref, aliases) => put_typedef(env, scope, type_ref, aliases),
         Statement::VarDecl(items) => {
             let mut results: Vec<Result<()>> = vec![];
             for (type_ref, decl) in items {
                 if scope.is_defined(decl.name.as_str()) {
-                    results.push(Err(ScopeError { errors: vec![format!("variable `{}` is duplicated", decl.name)] }));
+                    results.push(Err(ScopeError {
+                        errors: vec![format!("variable `{}` is duplicated", decl.name)],
+                    }));
                 } else if let std::result::Result::Err(msg) = env.solve_type(type_ref) {
-                    results.push(Err(ScopeError { errors: vec![msg], }));
+                    results.push(Err(ScopeError { errors: vec![msg] }));
                 } else {
                     scope.put(env, decl.name.as_str(), type_ref.clone());
                 }
@@ -424,10 +430,7 @@ struct point foo(struct point p) {
         // then
         if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
-            assert_eq!(
-                "variable `p` is duplicated",
-                errors[0]
-            );
+            assert_eq!("variable `p` is duplicated", errors[0]);
         } else {
             assert!(false);
         }
@@ -479,66 +482,21 @@ struct point foo(struct point p) {
         // then
         if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 15);
-            assert_eq!(
-                "variable `a` is not defined",
-                errors[0]
-            );
-            assert_eq!(
-                "variable `foo` is not defined",
-                errors[1]
-            );
-            assert_eq!(
-                "variable `bar` is not defined",
-                errors[2]
-            );
-            assert_eq!(
-                "variable `b` is not defined",
-                errors[3]
-            );
-            assert_eq!(
-                "variable `c` is not defined",
-                errors[4]
-            );
-            assert_eq!(
-                "variable `zz` is not defined",
-                errors[5]
-            );
-            assert_eq!(
-                "variable `yy` is not defined",
-                errors[6]
-            );
-            assert_eq!(
-                "variable `m` is not defined",
-                errors[7]
-            );
-            assert_eq!(
-                "variable `i` is not defined",
-                errors[8]
-            );
-            assert_eq!(
-                "variable `j` is not defined",
-                errors[9]
-            );
-            assert_eq!(
-                "variable `k` is not defined",
-                errors[10]
-            );
-            assert_eq!(
-                "variable `xx` is not defined",
-                errors[11]
-            );
-            assert_eq!(
-                "variable `q` is not defined",
-                errors[12]
-            );
-            assert_eq!(
-                "variable `bs` is not defined",
-                errors[13]
-            );
-            assert_eq!(
-                "variable `abc` is not defined",
-                errors[14]
-            );
+            assert_eq!("variable `a` is not defined", errors[0]);
+            assert_eq!("variable `foo` is not defined", errors[1]);
+            assert_eq!("variable `bar` is not defined", errors[2]);
+            assert_eq!("variable `b` is not defined", errors[3]);
+            assert_eq!("variable `c` is not defined", errors[4]);
+            assert_eq!("variable `zz` is not defined", errors[5]);
+            assert_eq!("variable `yy` is not defined", errors[6]);
+            assert_eq!("variable `m` is not defined", errors[7]);
+            assert_eq!("variable `i` is not defined", errors[8]);
+            assert_eq!("variable `j` is not defined", errors[9]);
+            assert_eq!("variable `k` is not defined", errors[10]);
+            assert_eq!("variable `xx` is not defined", errors[11]);
+            assert_eq!("variable `q` is not defined", errors[12]);
+            assert_eq!("variable `bs` is not defined", errors[13]);
+            assert_eq!("variable `abc` is not defined", errors[14]);
         } else {
             assert!(false);
         }
@@ -566,10 +524,7 @@ struct point foo(struct point p) {
         // then
         if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
-            assert_eq!(
-                "function `bar` is not defined",
-                errors[0]
-            );
+            assert_eq!("function `bar` is not defined", errors[0]);
         } else {
             assert!(false);
         }
@@ -600,15 +555,11 @@ myp foo(myp p) {
         if let Some(ScopeError { errors }) = result.err() {
             // assert!(false);
             assert_eq!(errors.len(), 1);
-            assert_eq!(
-                "variable `p` is duplicated",
-                errors[0]
-            );
+            assert_eq!("variable `p` is duplicated", errors[0]);
         } else {
             assert!(true);
         }
     }
-
 
     #[test]
     fn test_typedef_invalid() {
@@ -633,10 +584,7 @@ int foo(myp p) {
         // then
         if let Some(ScopeError { errors }) = result.err() {
             assert_eq!(errors.len(), 1);
-            assert_eq!(
-                "struct type `struct point` is not defined",
-                errors[0]
-            );
+            assert_eq!("struct type `struct point` is not defined", errors[0]);
         } else {
             assert!(false);
         }

@@ -11,11 +11,10 @@ impl Parser {
         if self.cur_token.token_type == TokenType::TypeDef {
             self.next_token();
             let (tag_name, members) = self.parse_struct_type()?;
-            let ty =
-                    TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
-                        tag_name,
-                        members,
-                    }))));
+            let ty = TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
+                tag_name,
+                members,
+            }))));
             let mut aliases: Vec<String> = vec![];
             loop {
                 if self.cur_token.token_type != TokenType::Ident {
