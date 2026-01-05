@@ -66,7 +66,7 @@ pub fn check_type(ast: &Program, env: &Env) -> Result<()> {
                 let global_scope = env.get_global_scope();
                 for (type_ref, decl) in items {
                     if let Err(e) =
-                        check_declarator(&env, global_scope, type_ref, decl, external_item_loc)
+                        check_declarator(env, global_scope, type_ref, decl, external_item_loc)
                     {
                         results.push(e);
                     }
@@ -91,7 +91,7 @@ pub fn check_type(ast: &Program, env: &Env) -> Result<()> {
                     results.push(e);
                 }
             }
-            ExternalItem::TypedefNode(type_ref, items) => {
+            ExternalItem::TypedefNode(_type_ref, _items) => {
                 // NOP
             }
         }
@@ -117,7 +117,7 @@ fn check_statement(env: &Env, scope: &LocalScope, stmt_node: &StatementNode) -> 
         Statement::Break | Statement::Continue => {
             // NOP
         }
-        Statement::Typedef(type_ref, items) => {
+        Statement::Typedef(_type_ref, _items) => {
             // NOP
         }
         Statement::VarDecl(items) => {

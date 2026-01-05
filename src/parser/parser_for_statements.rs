@@ -126,7 +126,7 @@ impl Parser {
             }
             self.next_token();
         }
-        return Ok((Statement::Typedef(ty, aliases), self.cur_token.loc()));
+        Ok((Statement::Typedef(ty, aliases), self.cur_token.loc()))
     }
 
     // { <statement>* }

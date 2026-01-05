@@ -160,7 +160,7 @@ impl LocalScope {
 
     /// シンボル名が存在しているかどうか
     pub fn is_defined(&self, name: &str) -> bool {
-        self.entities.get(name).is_some()
+        self.entities.contains_key(name)
     }
 }
 
@@ -192,9 +192,9 @@ impl Env {
         let mut scopes = HashMap::new();
         scopes.insert(0, global_scope);
         Env {
-            type_table: type_table,
-            functions: functions,
-            scopes: scopes,
+            type_table,
+            functions,
+            scopes,
             block_scope_table: HashMap::new(),
         }
     }
