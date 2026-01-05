@@ -11,7 +11,9 @@ impl Parser {
         match self.cur_token.token_type {
             TokenType::Return => self.parse_return_statement(),
             TokenType::Int | TokenType::Char | TokenType::Struct => self.parse_vardecl_statement(),
-            TokenType::Ident if self.peek_token.token_type == TokenType::Ident => self.parse_vardecl_statement(),
+            TokenType::Ident if self.peek_token.token_type == TokenType::Ident => {
+                self.parse_vardecl_statement()
+            }
             TokenType::TypeDef => self.parse_typedef_statement(),
             TokenType::Lbrace => self.parse_block_statement(),
             TokenType::If => self.parse_if_statement(),
@@ -96,18 +98,17 @@ impl Parser {
 
     fn parse_typedef_statement(&mut self) -> Result<StatementNode> {
         self.next_token();
-        let ty =
-            if self.cur_token.token_type == TokenType::Struct {
-                let (tag_name, members) = self.parse_struct_type()?;
-                TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
-                    tag_name,
-                    members,
-                }))))
-            } else {
-                let t = TypeRef::Named(self.cur_token.literal());
-                self.next_token();
-                t
-            };
+        let ty = if self.cur_token.token_type == TokenType::Struct {
+            let (tag_name, members) = self.parse_struct_type()?;
+            TypeRef::Typedef(Box::new(TypeRef::Struct(StructRef::Decl(StructDecl {
+                tag_name,
+                members,
+            }))))
+        } else {
+            let t = TypeRef::Named(self.cur_token.literal());
+            self.next_token();
+            t
+        };
         let mut aliases: Vec<String> = vec![];
         loop {
             if self.cur_token.token_type != TokenType::Ident {
