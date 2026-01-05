@@ -26,7 +26,7 @@ fn build_error_msg(loc: &Loc, msg: String) -> String {
 }
 
 impl fmt::Display for ScopeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
 }
@@ -130,7 +130,7 @@ fn check_function(
     mut env: &mut Env,
     functions: &Functions,
     global_scope: &LocalScope,
-    name: &str,
+    _name: &str,
     parameters: &Vec<Parameter>,
     body: &Option<Box<StatementNode>>,
 ) -> Vec<ScopeError> {
@@ -349,7 +349,7 @@ fn check_expression(
         Expression::CharacterLiteral(_) => Ok(()),
         Expression::StringLiteral(_) => Ok(()),
         Expression::Identifier(name) => {
-            if !scope.find(env, name).is_some() {
+            if scope.find(env, name).is_none() {
                 Err(ScopeError {
                     errors: vec![format!("variable `{}` is not defined", name)],
                 })
@@ -377,7 +377,7 @@ fn check_expression(
             function_name,
             arguments,
         } => {
-            if !functions.find(function_name).is_some() {
+            if functions.find(function_name).is_none() {
                 return Err(ScopeError {
                     errors: vec![format!("function `{}` is not defined", function_name)],
                 });
